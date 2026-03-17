@@ -57,7 +57,7 @@
                         </div>
                         <div class="col-md-3">
                             <asp:DropDownList ID="ddlLoanStatus" runat="server" CssClass="form-select"
-                                OnSelectedIndexChanged="ddlLoanStatus_SelectedIndexChanged">
+                                AutoPostBack="true" OnSelectedIndexChanged="ddlLoanStatus_SelectedIndexChanged">
                                 <asp:ListItem Value="">All Status</asp:ListItem>
                                 <asp:ListItem Value="Active">Active</asp:ListItem>
                                 <asp:ListItem Value="Returned">Returned</asp:ListItem>
@@ -66,7 +66,7 @@
                         </div>
                         <div class="col-md-3">
                             <asp:DropDownList ID="ddlDateRange" runat="server" CssClass="form-select"
-                                OnSelectedIndexChanged="ddlDateRange_SelectedIndexChanged">
+                                AutoPostBack="true" OnSelectedIndexChanged="ddlDateRange_SelectedIndexChanged">
                                 <asp:ListItem Value="">All Time</asp:ListItem>
                                 <asp:ListItem Value="Today">Today</asp:ListItem>
                                 <asp:ListItem Value="ThisWeek">This Week</asp:ListItem>

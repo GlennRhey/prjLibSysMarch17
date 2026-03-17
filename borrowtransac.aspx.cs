@@ -70,7 +70,7 @@ namespace prjLibrarySystem
 
                 if (!string.IsNullOrWhiteSpace(txtSearchLoan.Text))
                 {
-                    query += @" AND (b.Title LIKE @Search OR mem.FullName LIKE @Search OR t.BorrowID LIKE @Search)";
+                    query += @" AND (b.Title LIKE @Search OR mem.FullName LIKE @Search OR CAST(t.BorrowID AS NVARCHAR) LIKE @Search)";
                     parameters.Add(new SqlParameter("@Search", "%" + txtSearchLoan.Text.Trim() + "%"));
                 }
 
