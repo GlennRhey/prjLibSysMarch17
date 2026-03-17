@@ -11,20 +11,18 @@ namespace prjLibrarySystem
     {
         protected void Page_Load(object sender, EventArgs e)
         {
-            // FIX: Session["Username"] -> Session["UserID"], Session["UserRole"] -> Session["Role"]
             if (Session["UserID"] == null || Session["Role"] == null)
             {
                 Response.Redirect("Login.aspx");
                 return;
             }
 
-            if (Session["Role"].ToString() != "Student")
+            if (Session["Role"].ToString() != "Member")
             {
                 Response.Redirect("AdminDashboard.aspx");
                 return;
             }
 
-            // FIX: Use FullName with fallback to UserID
             lblStudentName.Text = "Welcome, " + (Session["FullName"] ?? Session["UserID"]).ToString();
 
             if (!IsPostBack)
@@ -32,7 +30,53 @@ namespace prjLibrarySystem
                 LoadAvailableBooks();
                 HideStatusMessage();
             }
+
+            // Always refresh the info banner (even on postback) so it
+            // reflects the latest tblSystemSettings values.
+            LoadBorrowInfoBanner();
         }
+
+        // ── Populate the info banner from tblSystemSettings ───────────────────
+
+        private void LoadBorrowInfoBanner()
+        {
+            try
+            {
+                string memberIdStr = Session["MemberID"]?.ToString() ?? "";
+                string memberType = Session["MemberType"]?.ToString() ?? "Student";
+
+                int maxBooks = 3; // fallback
+
+                if (!string.IsNullOrEmpty(memberIdStr))
+                {
+                    int memberId = Convert.ToInt32(memberIdStr);
+                    var (max, _) = DatabaseHelper.GetBorrowLimits(memberId);
+                    maxBooks = max;
+                }
+                else
+                {
+                    // Fallback: read directly for the member type from session
+                    DataTable dt = DatabaseHelper.ExecuteQuery(
+                        "SELECT SettingValue FROM tblSystemSettings WHERE MemberType = @MT AND SettingKey = 'MaxBorrowedBooks'",
+                        new SqlParameter[] { new SqlParameter("@MT", memberType) });
+
+                    if (dt.Rows.Count > 0)
+                        maxBooks = Convert.ToInt32(dt.Rows[0]["SettingValue"]);
+                }
+
+                lblBorrowInfo.Text =
+                    $"You may borrow up to <strong>{maxBooks} book{(maxBooks == 1 ? "" : "s")}</strong> " +
+                    $"and have up to <strong>{maxBooks} pending request{(maxBooks == 1 ? "" : "s")}</strong> " +
+                    $"at a time. All requests require librarian approval.";
+            }
+            catch
+            {
+                lblBorrowInfo.Text =
+                    "You may borrow books up to your account limit. All requests require librarian approval.";
+            }
+        }
+
+        // ── Load available books grid ─────────────────────────────────────────
 
         private void LoadAvailableBooks()
         {
@@ -50,7 +94,6 @@ namespace prjLibrarySystem
                     query += " AND (Title LIKE @Search OR Author LIKE @Search)";
                     parameters.Add(new SqlParameter("@Search", "%" + txtSearchBooks.Text.Trim() + "%"));
                 }
-
                 if (!string.IsNullOrEmpty(ddlCategory.SelectedValue))
                 {
                     query += " AND Category = @Category";
@@ -98,52 +141,43 @@ namespace prjLibrarySystem
             string isbn = e.CommandArgument.ToString();
             string memberIdStr = Session["MemberID"]?.ToString() ?? "";
 
-            if (string.IsNullOrEmpty(memberIdStr))
-            {
-                ShowError("Session expired. Please log in again.");
-                return;
-            }
+            if (string.IsNullOrEmpty(memberIdStr)) { ShowError("Session expired. Please log in again."); return; }
 
             int memberId = Convert.ToInt32(memberIdStr);
 
             try
             {
-                // 1. Count active (accepted) borrows
+                // Get limits live from tblSystemSettings
+                var (maxBooks, borrowDays) = DatabaseHelper.GetBorrowLimits(memberId);
+
+                // 1. Check active borrows against limit
                 int activeBorrows = Convert.ToInt32(DatabaseHelper.ExecuteScalar(@"
-                    SELECT COUNT(*)
-                    FROM   tblTransactions
-                    WHERE  MemberID      = @MemberID
-                      AND  Status        = 'Active'
-                      AND  RequestStatus = 'Accepted'",
+                    SELECT COUNT(*) FROM tblTransactions
+                    WHERE  MemberID = @MemberID AND Status = 'Active' AND RequestStatus = 'Accepted'",
                     new SqlParameter[] { new SqlParameter("@MemberID", memberId) }));
 
-                if (activeBorrows >= 3)
+                if (activeBorrows >= maxBooks)
                 {
-                    ShowError("You already have 3 borrowed books. Please return a book before borrowing another.");
+                    ShowError($"You already have {maxBooks} borrowed book{(maxBooks == 1 ? "" : "s")}. Please return a book before borrowing another.");
                     return;
                 }
 
-                // 2. Count pending borrow requests
+                // 2. Check pending requests against limit
                 int pendingBorrows = Convert.ToInt32(DatabaseHelper.ExecuteScalar(@"
-                    SELECT COUNT(*)
-                    FROM   tblTransactions
-                    WHERE  MemberID      = @MemberID
-                      AND  RequestType   = 'Borrow'
-                      AND  RequestStatus = 'Pending'",
+                    SELECT COUNT(*) FROM tblTransactions
+                    WHERE  MemberID = @MemberID AND RequestType = 'Borrow' AND RequestStatus = 'Pending'",
                     new SqlParameter[] { new SqlParameter("@MemberID", memberId) }));
 
-                if (pendingBorrows >= 3)
+                if (pendingBorrows >= maxBooks)
                 {
-                    ShowError("You already have 3 pending borrow requests. Please wait for librarian approval.");
+                    ShowError($"You already have {maxBooks} pending borrow request{(maxBooks == 1 ? "" : "s")}. Please wait for librarian approval.");
                     return;
                 }
 
-                // 3. Check for duplicate — same book not yet returned or cancelled
+                // 3. Check duplicate
                 int duplicate = Convert.ToInt32(DatabaseHelper.ExecuteScalar(@"
-                    SELECT COUNT(*)
-                    FROM   tblTransactions
-                    WHERE  MemberID      = @MemberID
-                      AND  ISBN          = @ISBN
+                    SELECT COUNT(*) FROM tblTransactions
+                    WHERE  MemberID = @MemberID AND ISBN = @ISBN
                       AND  RequestStatus != 'Rejected'
                       AND  Status        != 'Returned'
                       AND  Status        != 'Cancelled'",
@@ -153,13 +187,9 @@ namespace prjLibrarySystem
                         new SqlParameter("@ISBN",     isbn)
                     }));
 
-                if (duplicate > 0)
-                {
-                    ShowError("You already have an active or pending request for this book.");
-                    return;
-                }
+                if (duplicate > 0) { ShowError("You already have an active or pending request for this book."); return; }
 
-                // 4. Get book title for feedback
+                // 4. Get book title
                 DataTable bookDt = DatabaseHelper.ExecuteQuery(
                     "SELECT Title FROM tblBooks WHERE ISBN = @ISBN",
                     new SqlParameter[] { new SqlParameter("@ISBN", isbn) });
@@ -167,27 +197,23 @@ namespace prjLibrarySystem
                 if (bookDt.Rows.Count == 0) { ShowError("Book not found."); return; }
                 string bookTitle = bookDt.Rows[0]["Title"].ToString();
 
-                // 5. Insert borrow request
+                // 5. Insert borrow request with dynamic due date
                 DatabaseHelper.ExecuteNonQuery(@"
                     INSERT INTO tblTransactions
-                        (MemberID, ISBN, RequestType, RequestStatus,
-                         BorrowDate, DueDate, Status)
+                        (MemberID, ISBN, RequestType, RequestStatus, BorrowDate, DueDate, Status)
                     VALUES
-                        (@MemberID, @ISBN, 'Borrow', 'Pending',
-                         GETDATE(), DATEADD(DAY, 14, GETDATE()), 'Active')",
+                        (@MemberID, @ISBN, 'Borrow', 'Pending', GETDATE(), DATEADD(DAY, @BorrowDays, GETDATE()), 'Active')",
                     new SqlParameter[]
                     {
-                        new SqlParameter("@MemberID", memberId),
-                        new SqlParameter("@ISBN",     isbn)
+                        new SqlParameter("@MemberID",  memberId),
+                        new SqlParameter("@ISBN",       isbn),
+                        new SqlParameter("@BorrowDays", borrowDays)
                     });
 
-                ShowSuccess("Borrow request submitted for \"" + bookTitle + "\". Please wait for librarian approval.");
+                ShowSuccess($"Borrow request submitted for \"{bookTitle}\". Please wait for librarian approval.");
                 LoadAvailableBooks();
             }
-            catch (Exception ex)
-            {
-                ShowError("Error submitting request: " + ex.Message);
-            }
+            catch (Exception ex) { ShowError("Error submitting request: " + ex.Message); }
         }
 
         protected void btnChangePassword_Click(object sender, EventArgs e)
@@ -214,21 +240,12 @@ namespace prjLibrarySystem
             {
                 bool success = DatabaseHelper.ChangePassword(Session["UserID"].ToString(), current, newPass);
                 if (success)
-                {
-                    txtCurrentPassword.Text = txtNewPassword.Text = txtConfirmPassword.Text = "";
-                    ShowPasswordSuccess("Password changed successfully!");
-                }
+                { txtCurrentPassword.Text = txtNewPassword.Text = txtConfirmPassword.Text = ""; ShowPasswordSuccess("Password changed successfully!"); }
                 else
-                {
-                    ShowPasswordError("Current password is incorrect.");
-                }
+                { ShowPasswordError("Current password is incorrect."); }
                 KeepModalOpen();
             }
-            catch (Exception ex)
-            {
-                ShowPasswordError("An error occurred: " + ex.Message);
-                KeepModalOpen();
-            }
+            catch (Exception ex) { ShowPasswordError("An error occurred: " + ex.Message); KeepModalOpen(); }
         }
 
         private void ShowSuccess(string message)
@@ -254,23 +271,12 @@ namespace prjLibrarySystem
         }
 
         private void ShowPasswordError(string msg)
-        {
-            lblPasswordError.Text = msg;
-            passwordError.Style["display"] = "block";
-            passwordSuccess.Style["display"] = "none";
-        }
+        { lblPasswordError.Text = msg; passwordError.Style["display"] = "block"; passwordSuccess.Style["display"] = "none"; }
 
         private void ShowPasswordSuccess(string msg)
-        {
-            lblPasswordSuccess.Text = msg;
-            passwordSuccess.Style["display"] = "block";
-            passwordError.Style["display"] = "none";
-        }
+        { lblPasswordSuccess.Text = msg; passwordSuccess.Style["display"] = "block"; passwordError.Style["display"] = "none"; }
 
         private void HidePasswordMessages()
-        {
-            passwordError.Style["display"] = "none";
-            passwordSuccess.Style["display"] = "none";
-        }
+        { passwordError.Style["display"] = "none"; passwordSuccess.Style["display"] = "none"; }
     }
 }

@@ -16,168 +16,106 @@ namespace prjLibrarySystem
             set { ViewState["SearchTerm"] = value; }
         }
 
-        // ddlYearLevel in Members.aspx uses Text values: "1st Year","2nd Year","3rd Year","4th Year"
-        // These map to int YearLevel in tblMembers: 1,2,3,4
-        private int ParseYearLevel(string text)
-        {
-            switch (text)
-            {
-                case "1st Year": return 1;
-                case "2nd Year": return 2;
-                case "3rd Year": return 3;
-                case "4th Year": return 4;
-                default:
-                    // fallback: try parsing the first character
-                    if (text.Length > 0 && char.IsDigit(text[0]))
-                        return int.Parse(text[0].ToString());
-                    return 1;
-            }
-        }
-
-        private string YearLevelToText(int yearLevel)
-        {
-            switch (yearLevel)
-            {
-                case 1: return "1st Year";
-                case 2: return "2nd Year";
-                case 3: return "3rd Year";
-                case 4: return "4th Year";
-                default: return "1st Year";
-            }
-        }
-
         protected void Page_Load(object sender, EventArgs e)
         {
-            if (!IsPostBack)
-                LoadMembers();
+            if (Session["UserID"] == null)
+            {
+                Response.Redirect("Login.aspx");
+                return;
+            }
+
+            string role = Session["Role"]?.ToString();
+            if (role != "Admin" && role != "Super Admin")
+            {
+                Response.Redirect("StudentDashboard.aspx");
+                return;
+            }
+
+            // Show the Super Admin nav link only for Super Admins
+            // (no longer needed — Super Admin has their own dashboard)
+
+            if (!IsPostBack) LoadMembers();
         }
+
+        // ── Load: Admin view shows ONLY Students and Teachers ─────────────────
 
         private void LoadMembers()
         {
             try
             {
-                string currentSearch = SearchTerm;
+                var parameters = new List<SqlParameter>();
 
-                // Query to get both students (from tblMembers) and admins (from tblUsers only)
+                // Base query — always restricted to tblMembers (Students + Teachers)
                 string query = @"
-                    SELECT 
-                        u.UserID AS MemberID,
+                    SELECT
+                        u.UserID        AS MemberID,
                         m.FullName,
-                        u.UserID AS Username,
+                        u.UserID        AS Username,
                         u.Email,
                         m.Course,
                         m.YearLevel,
-                        'Student' AS Role,
-                        u.CreatedAt AS RegistrationDate,
+                        m.MemberType    AS Role,
+                        u.CreatedAt     AS RegistrationDate,
+                        u.IsActive,
                         CASE WHEN u.IsActive = 1 THEN 'Active' ELSE 'Inactive' END AS Status
                     FROM tblMembers m
                     INNER JOIN tblUsers u ON m.UserID = u.UserID
-                    WHERE u.Role = 'Student'
-                    
-                    UNION ALL
-                    
-                    SELECT 
-                        u.UserID AS MemberID,
-                        u.FullName,
-                        u.UserID AS Username,
-                        u.Email,
-                        NULL AS Course,
-                        NULL AS YearLevel,
-                        'Admin' AS Role,
-                        u.CreatedAt AS RegistrationDate,
-                        CASE WHEN u.IsActive = 1 THEN 'Active' ELSE 'Inactive' END AS Status
-                    FROM tblUsers u
-                    WHERE u.Role = 'Admin'";
+                    WHERE u.Role = 'Member'";
 
-                var parameters = new List<SqlParameter>();
-
-                if (!string.IsNullOrEmpty(currentSearch))
-                {
-                    query += " AND (FullName LIKE @Search OR Email LIKE @Search OR Username LIKE @Search)";
-                    parameters.Add(new SqlParameter("@Search", "%" + currentSearch + "%"));
-                }
-
-                // Apply role filter if selected
+                // Optional MemberType sub-filter (Student or Teacher)
                 if (!string.IsNullOrEmpty(ddlMembershipType.SelectedValue))
                 {
-                    if (ddlMembershipType.SelectedValue == "Student")
-                    {
-                        query = @"
-                            SELECT 
-                                u.UserID AS MemberID,
-                                m.FullName,
-                                u.UserID AS Username,
-                                u.Email,
-                                m.Course,
-                                m.YearLevel,
-                                'Student' AS Role,
-                                u.CreatedAt AS RegistrationDate,
-                                CASE WHEN u.IsActive = 1 THEN 'Active' ELSE 'Inactive' END AS Status
-                            FROM tblMembers m
-                            INNER JOIN tblUsers u ON m.UserID = u.UserID
-                            WHERE u.Role = 'Student'";
-                    }
-                    else if (ddlMembershipType.SelectedValue == "Admin")
-                    {
-                        query = @"
-                            SELECT 
-                                u.UserID AS MemberID,
-                                u.FullName,
-                                u.UserID AS Username,
-                                u.Email,
-                                NULL AS Course,
-                                NULL AS YearLevel,
-                                'Admin' AS Role,
-                                u.CreatedAt AS RegistrationDate,
-                                CASE WHEN u.IsActive = 1 THEN 'Active' ELSE 'Inactive' END AS Status
-                            FROM tblUsers u
-                            WHERE u.Role = 'Admin'";
-                    }
+                    query += " AND m.MemberType = @MemberType";
+                    parameters.Add(new SqlParameter("@MemberType", ddlMembershipType.SelectedValue));
                 }
 
-                // Apply search filter again if role filter was applied
-                if (!string.IsNullOrEmpty(currentSearch) && !string.IsNullOrEmpty(ddlMembershipType.SelectedValue))
+                // Search filter
+                if (!string.IsNullOrEmpty(SearchTerm))
                 {
-                    query += " AND (FullName LIKE @Search OR Email LIKE @Search OR Username LIKE @Search)";
-                    parameters.Add(new SqlParameter("@Search", "%" + currentSearch + "%"));
+                    query += " AND (m.FullName LIKE @Search OR u.Email LIKE @Search OR u.UserID LIKE @Search)";
+                    parameters.Add(new SqlParameter("@Search", "%" + SearchTerm + "%"));
                 }
 
-                // Apply status filter
+                // Status filter
                 if (!string.IsNullOrEmpty(ddlStatus.SelectedValue))
                 {
-                    query += " AND (CASE WHEN IsActive = 1 THEN 'Active' ELSE 'Inactive' END) = @Status";
+                    query += " AND (CASE WHEN u.IsActive = 1 THEN 'Active' ELSE 'Inactive' END) = @Status";
                     parameters.Add(new SqlParameter("@Status", ddlStatus.SelectedValue));
                 }
 
-                query += " ORDER BY Role ASC, Username ASC";
+                query += " ORDER BY m.MemberType ASC, u.UserID ASC";
 
                 DataTable dt = DatabaseHelper.ExecuteQuery(query, parameters.ToArray());
                 gvMembers.DataSource = dt;
                 gvMembers.DataBind();
-                txtSearchMember.Text = currentSearch;
+                txtSearchMember.Text = SearchTerm;
             }
             catch (Exception ex)
             {
                 gvMembers.DataSource = null;
                 gvMembers.DataBind();
-                ScriptManager.RegisterStartupScript(this, this.GetType(), "error",
+                ScriptManager.RegisterStartupScript(this, GetType(), "error",
                     $"alert('Error loading members: {ex.Message}');", true);
             }
         }
 
-        // All control IDs below verified against Members.aspx:
-        // txtUserId, txtFullName, txtEmail, txtCourse, ddlYearLevel, txtPassword
-        // hfSelectedRole, hfEditingMemberId, lblRegisterTitle
+        // ── Save (Add / Edit) ─────────────────────────────────────────────────
 
         protected void btnSaveMember_Click(object sender, EventArgs e)
         {
             try
             {
-                string selectedRole = hfSelectedRole.Value; // "Student" or "Admin"
+                // hfSelectedRole is either "Student" or "Teacher" — never "Admin" here
+                string selectedRole = hfSelectedRole.Value;
+                if (selectedRole != "Student" && selectedRole != "Teacher")
+                    selectedRole = "Student";
+
+                string adminId = Session["UserID"]?.ToString() ?? "";
+                string adminName = Session["FullName"]?.ToString() ?? "";
 
                 if (!string.IsNullOrEmpty(hfEditingMemberId.Value))
                 {
-                    // ── EDIT STUDENT ───────────────────────────────────────────
+                    // ── Edit existing Student / Teacher ──────────────────────
                     int memberId = int.Parse(hfEditingMemberId.Value);
 
                     DataTable userDt = DatabaseHelper.ExecuteQuery(
@@ -187,8 +125,7 @@ namespace prjLibrarySystem
                     if (userDt.Rows.Count == 0) throw new Exception("Member not found.");
                     string userId = userDt.Rows[0]["UserID"].ToString();
 
-                    // Update email in tblUsers
-                    DatabaseHelper.ExecuteQuery(
+                    DatabaseHelper.ExecuteNonQuery(
                         "UPDATE tblUsers SET Email = @Email WHERE UserID = @UserID",
                         new SqlParameter[]
                         {
@@ -196,9 +133,8 @@ namespace prjLibrarySystem
                             new SqlParameter("@UserID", userId)
                         });
 
-                    // Update password only if filled in
                     if (!string.IsNullOrEmpty(txtPassword.Text))
-                        DatabaseHelper.ExecuteQuery(
+                        DatabaseHelper.ExecuteNonQuery(
                             "UPDATE tblUsers SET PasswordHash = @PasswordHash WHERE UserID = @UserID",
                             new SqlParameter[]
                             {
@@ -206,87 +142,52 @@ namespace prjLibrarySystem
                                 new SqlParameter("@UserID",       userId)
                             });
 
-                    // Update member profile
-                    DatabaseHelper.ExecuteQuery(
-                        "UPDATE tblMembers SET FullName=@FullName, Course=@Course, YearLevel=@YearLevel WHERE MemberID=@MemberID",
-                        new SqlParameter[]
-                        {
-                            new SqlParameter("@FullName",  txtFullName.Text),
-                            new SqlParameter("@Course",    txtCourse.Text),
-                            new SqlParameter("@YearLevel", ParseYearLevel(ddlYearLevel.SelectedValue)),
-                            new SqlParameter("@MemberID",  memberId)
-                        });
-                }
-                else if (selectedRole == "Admin" && !string.IsNullOrEmpty(txtUserId.Text))
-                {
-                    // ── EDIT ADMIN (when hfEditingMemberId is empty but role is Admin) ──
-                    string userId = txtUserId.Text.Trim();
-
-                    // Check if admin exists
-                    DataTable checkDt = DatabaseHelper.ExecuteQuery(
-                        "SELECT COUNT(*) FROM tblUsers WHERE UserID = @UserID AND Role = 'Admin'",
-                        new SqlParameter[] { new SqlParameter("@UserID", userId) });
-
-                    if (Convert.ToInt32(checkDt.Rows[0][0]) > 0)
-                    {
-                        // Update existing admin
-                        string updateQuery = "UPDATE tblUsers SET Email = @Email";
-                        var updateParams = new List<SqlParameter>
-                        {
-                            new SqlParameter("@Email", txtEmail.Text),
-                            new SqlParameter("@UserID", userId)
-                        };
-
-                        if (!string.IsNullOrEmpty(txtPassword.Text))
-                        {
-                            updateQuery += ", PasswordHash = @PasswordHash";
-                            updateParams.Add(new SqlParameter("@PasswordHash", DatabaseHelper.HashPassword(txtPassword.Text)));
-                        }
-
-                        if (!string.IsNullOrEmpty(txtFullName.Text))
-                        {
-                            updateQuery += ", FullName = @FullName";
-                            updateParams.Add(new SqlParameter("@FullName", txtFullName.Text));
-                        }
-
-                        updateQuery += " WHERE UserID = @UserID";
-
-                        DatabaseHelper.ExecuteQuery(updateQuery, updateParams.ToArray());
-                    }
-                    else
-                    {
-                        // Create new admin
-                        DatabaseHelper.ExecuteQuery(
-                            "INSERT INTO tblUsers (UserID, PasswordHash, Role, FullName, Email, IsActive) VALUES (@UserID, @PasswordHash, 'Admin', @FullName, @Email, 1)",
+                    if (selectedRole == "Teacher")
+                        DatabaseHelper.ExecuteNonQuery(
+                            "UPDATE tblMembers SET FullName=@FullName, MemberType='Teacher', Course=NULL, YearLevel=NULL WHERE MemberID=@MemberID",
                             new SqlParameter[]
                             {
-                                new SqlParameter("@UserID",       userId),
-                                new SqlParameter("@PasswordHash", DatabaseHelper.HashPassword(txtPassword.Text)),
-                                new SqlParameter("@FullName",     txtFullName.Text),
-                                new SqlParameter("@Email",        txtEmail.Text)
+                                new SqlParameter("@FullName", txtFullName.Text),
+                                new SqlParameter("@MemberID", memberId)
                             });
-                    }
+                    else
+                        DatabaseHelper.ExecuteNonQuery(
+                            "UPDATE tblMembers SET FullName=@FullName, MemberType='Student', Course=@Course, YearLevel=@YearLevel WHERE MemberID=@MemberID",
+                            new SqlParameter[]
+                            {
+                                new SqlParameter("@FullName",  txtFullName.Text),
+                                new SqlParameter("@Course",    txtCourse.Text),
+                                new SqlParameter("@YearLevel", ParseYearLevel(ddlYearLevel.SelectedValue)),
+                                new SqlParameter("@MemberID",  memberId)
+                            });
+
+                    DatabaseHelper.WriteAuditLog(adminId, adminName, "EDIT_MEMBER", "tblMembers", memberId.ToString());
                 }
                 else
                 {
-                    // ── ADD NEW ──────────────────────────────────────────────
+                    // ── Add new Student / Teacher ────────────────────────────
                     string newUserId = txtUserId.Text.Trim();
 
-                    if (selectedRole == "Student")
-                    {
-                        // Insert login record first (FK constraint)
-                        DatabaseHelper.ExecuteQuery(
-                            "INSERT INTO tblUsers (UserID, PasswordHash, Role, Email, IsActive) VALUES (@UserID, @PasswordHash, 'Student', @Email, 1)",
+                    DatabaseHelper.ExecuteNonQuery(
+                        "INSERT INTO tblUsers (UserID, PasswordHash, Role, Email, IsActive) VALUES (@UserID, @PasswordHash, 'Member', @Email, 1)",
+                        new SqlParameter[]
+                        {
+                            new SqlParameter("@UserID",       newUserId),
+                            new SqlParameter("@PasswordHash", DatabaseHelper.HashPassword(txtPassword.Text)),
+                            new SqlParameter("@Email",        txtEmail.Text)
+                        });
+
+                    if (selectedRole == "Teacher")
+                        DatabaseHelper.ExecuteNonQuery(
+                            "INSERT INTO tblMembers (UserID, FullName, MemberType) VALUES (@UserID, @FullName, 'Teacher')",
                             new SqlParameter[]
                             {
-                                new SqlParameter("@UserID",       newUserId),
-                                new SqlParameter("@PasswordHash", DatabaseHelper.HashPassword(txtPassword.Text)),
-                                new SqlParameter("@Email",        txtEmail.Text)
+                                new SqlParameter("@UserID",   newUserId),
+                                new SqlParameter("@FullName", txtFullName.Text)
                             });
-
-                        // Insert student profile
-                        DatabaseHelper.ExecuteQuery(
-                            "INSERT INTO tblMembers (UserID, FullName, Course, YearLevel) VALUES (@UserID, @FullName, @Course, @YearLevel)",
+                    else
+                        DatabaseHelper.ExecuteNonQuery(
+                            "INSERT INTO tblMembers (UserID, FullName, MemberType, Course, YearLevel) VALUES (@UserID, @FullName, 'Student', @Course, @YearLevel)",
                             new SqlParameter[]
                             {
                                 new SqlParameter("@UserID",    newUserId),
@@ -294,273 +195,37 @@ namespace prjLibrarySystem
                                 new SqlParameter("@Course",    txtCourse.Text),
                                 new SqlParameter("@YearLevel", ParseYearLevel(ddlYearLevel.SelectedValue))
                             });
-                    }
-                    else
-                    {
-                        // Admin — FullName lives in tblUsers, no tblMembers row
-                        DatabaseHelper.ExecuteQuery(
-                            "INSERT INTO tblUsers (UserID, PasswordHash, Role, FullName, Email, IsActive) VALUES (@UserID, @PasswordHash, 'Admin', @FullName, @Email, 1)",
-                            new SqlParameter[]
-                            {
-                                new SqlParameter("@UserID",       newUserId),
-                                new SqlParameter("@PasswordHash", DatabaseHelper.HashPassword(txtPassword.Text)),
-                                new SqlParameter("@FullName",     txtFullName.Text),
-                                new SqlParameter("@Email",        txtEmail.Text)
-                            });
-                    }
+
+                    DatabaseHelper.WriteAuditLog(adminId, adminName, "ADD_MEMBER", "tblMembers", newUserId);
                 }
 
                 ClearMemberForm();
                 hfEditingMemberId.Value = "";
                 LoadMembers();
 
-                ScriptManager.RegisterStartupScript(this, this.GetType(), "Pop",
-                    "var myModal = bootstrap.Modal.getInstance(document.getElementById('memberModal')); myModal.hide();", true);
-                ScriptManager.RegisterStartupScript(this, this.GetType(), "success",
+                ScriptManager.RegisterStartupScript(this, GetType(), "closeModal",
+                    "var m = bootstrap.Modal.getInstance(document.getElementById('memberModal')); if(m) m.hide();", true);
+                ScriptManager.RegisterStartupScript(this, GetType(), "success",
                     "alert('Member saved successfully.');", true);
             }
             catch (Exception ex)
             {
-                ScriptManager.RegisterStartupScript(this, this.GetType(), "error",
+                ScriptManager.RegisterStartupScript(this, GetType(), "error",
                     $"alert('Error saving member: {ex.Message}');", true);
             }
         }
 
         private void ClearMemberForm()
         {
-            txtUserId.Text = "";
-            txtFullName.Text = "";
-            txtEmail.Text = "";
-            txtCourse.Text = "";
-            ddlYearLevel.SelectedIndex = 0;
-            txtPassword.Text = "";
+            txtUserId.Text = ""; txtFullName.Text = ""; txtEmail.Text = "";
+            txtCourse.Text = ""; ddlYearLevel.SelectedIndex = 0; txtPassword.Text = "";
+            hfEditingMemberId.Value = "";
         }
 
         protected void gvMembers_PageIndexChanging(object sender, GridViewPageEventArgs e)
         {
             gvMembers.PageIndex = e.NewPageIndex;
             LoadMembers();
-        }
-
-        protected void gvMembers_RowCommand(object sender, GridViewCommandEventArgs e)
-        {
-            try
-            {
-                int rowIndex = Convert.ToInt32(e.CommandArgument.ToString());
-                string memberId = gvMembers.DataKeys[rowIndex]["MemberID"].ToString();
-                string role = gvMembers.DataKeys[rowIndex]["Role"].ToString();
-
-                // ── TOGGLE Active/Inactive ─────────────────────────────────
-                if (e.CommandName == "ToggleStatus")
-                {
-                    if (role == "Student")
-                    {
-                        // For students, get the actual MemberID from tblMembers
-                        DataTable memberDt = DatabaseHelper.ExecuteQuery(
-                            "SELECT MemberID FROM tblMembers WHERE UserID = @UserID",
-                            new SqlParameter[] { new SqlParameter("@UserID", memberId) });
-
-                        if (memberDt.Rows.Count > 0)
-                        {
-                            string actualMemberId = memberDt.Rows[0]["MemberID"].ToString();
-                            DataTable userDt = DatabaseHelper.ExecuteQuery(@"
-                                SELECT u.UserID, u.IsActive
-                                FROM tblUsers u
-                                INNER JOIN tblMembers m ON u.UserID = m.UserID
-                                WHERE m.MemberID = @MemberID",
-                                new SqlParameter[] { new SqlParameter("@MemberID", actualMemberId) });
-
-                            if (userDt.Rows.Count > 0)
-                            {
-                                string userId = userDt.Rows[0]["UserID"].ToString();
-                                int newActive = Convert.ToInt32(userDt.Rows[0]["IsActive"]) == 1 ? 0 : 1;
-
-                                DatabaseHelper.ExecuteQuery(
-                                    "UPDATE tblUsers SET IsActive = @IsActive WHERE UserID = @UserID",
-                                    new SqlParameter[]
-                                    {
-                                        new SqlParameter("@IsActive", newActive),
-                                        new SqlParameter("@UserID",   userId)
-                                    });
-                            }
-                        }
-                    }
-                    else if (role == "Admin")
-                    {
-                        // For admins, use UserID directly
-                        DataTable userDt = DatabaseHelper.ExecuteQuery(@"
-                            SELECT UserID, IsActive FROM tblUsers WHERE UserID = @UserID",
-                            new SqlParameter[] { new SqlParameter("@UserID", memberId) });
-
-                        if (userDt.Rows.Count > 0)
-                        {
-                            int newActive = Convert.ToInt32(userDt.Rows[0]["IsActive"]) == 1 ? 0 : 1;
-
-                            DatabaseHelper.ExecuteQuery(
-                                "UPDATE tblUsers SET IsActive = @IsActive WHERE UserID = @UserID",
-                                new SqlParameter[]
-                                {
-                                    new SqlParameter("@IsActive", newActive),
-                                    new SqlParameter("@UserID",   memberId)
-                                });
-                        }
-                    }
-                    LoadMembers();
-                    return;
-                }
-
-                // ── DELETE ────────────────────────────────────────────────
-                if (e.CommandName == "DeleteMember")
-                {
-                    if (role == "Student")
-                    {
-                        // For students, get the actual MemberID from tblMembers
-                        DataTable memberDt = DatabaseHelper.ExecuteQuery(
-                            "SELECT MemberID FROM tblMembers WHERE UserID = @UserID",
-                            new SqlParameter[] { new SqlParameter("@UserID", memberId) });
-
-                        if (memberDt.Rows.Count > 0)
-                        {
-                            string actualMemberId = memberDt.Rows[0]["MemberID"].ToString();
-                            DataTable checkDt = DatabaseHelper.ExecuteQuery(
-                                "SELECT COUNT(*) FROM tblTransactions WHERE MemberID = @MemberID AND Status = 'Active'",
-                                new SqlParameter[] { new SqlParameter("@MemberID", actualMemberId) });
-
-                            if (Convert.ToInt32(checkDt.Rows[0][0]) > 0)
-                            {
-                                ScriptManager.RegisterStartupScript(this, this.GetType(), "alert",
-                                    "alert('Cannot delete a member with active borrow transactions.');", true);
-                                return;
-                            }
-
-                            DataTable userDt = DatabaseHelper.ExecuteQuery(
-                                "SELECT UserID FROM tblMembers WHERE MemberID = @MemberID",
-                                new SqlParameter[] { new SqlParameter("@MemberID", actualMemberId) });
-
-                            if (userDt.Rows.Count > 0)
-                                // ON DELETE CASCADE removes tblMembers row automatically
-                                DatabaseHelper.ExecuteQuery(
-                                    "DELETE FROM tblUsers WHERE UserID = @UserID",
-                                    new SqlParameter[] { new SqlParameter("@UserID", userDt.Rows[0]["UserID"].ToString()) });
-                        }
-                    }
-                    else if (role == "Admin")
-                    {
-                        // For admins, delete directly from tblUsers
-                        DataTable checkDt = DatabaseHelper.ExecuteQuery(
-                            "SELECT COUNT(*) FROM tblTransactions WHERE AdminID = @UserID AND Status = 'Active'",
-                            new SqlParameter[] { new SqlParameter("@UserID", memberId) });
-
-                        if (Convert.ToInt32(checkDt.Rows[0][0]) > 0)
-                        {
-                            ScriptManager.RegisterStartupScript(this, this.GetType(), "alert",
-                                "alert('Cannot delete an admin with active borrow transactions.');", true);
-                            return;
-                        }
-
-                        DatabaseHelper.ExecuteQuery(
-                            "DELETE FROM tblUsers WHERE UserID = @UserID",
-                            new SqlParameter[] { new SqlParameter("@UserID", memberId) });
-                    }
-
-                    LoadMembers();
-                    ScriptManager.RegisterStartupScript(this, this.GetType(), "success",
-                        "alert('Member deleted successfully.');", true);
-                    return;
-                }
-
-                // ── EDIT ──────────────────────────────────────────────────
-                if (e.CommandName == "EditMember")
-                {
-                    if (role == "Student")
-                    {
-                        // For students, get the actual MemberID from tblMembers
-                        DataTable memberDt = DatabaseHelper.ExecuteQuery(
-                            "SELECT MemberID FROM tblMembers WHERE UserID = @UserID",
-                            new SqlParameter[] { new SqlParameter("@UserID", memberId) });
-
-                        if (memberDt.Rows.Count > 0)
-                        {
-                            string actualMemberId = memberDt.Rows[0]["MemberID"].ToString();
-                            DataTable dt = DatabaseHelper.ExecuteQuery(@"
-                                SELECT m.MemberID, m.FullName, m.Course, m.YearLevel,
-                                       u.UserID, u.Email, u.IsActive
-                                FROM tblMembers m
-                                INNER JOIN tblUsers u ON m.UserID = u.UserID
-                                WHERE m.MemberID = @MemberID",
-                                new SqlParameter[] { new SqlParameter("@MemberID", actualMemberId) });
-
-                            if (dt.Rows.Count > 0)
-                            {
-                                DataRow row = dt.Rows[0];
-
-                                txtUserId.Text = row["UserID"].ToString();
-                                txtFullName.Text = row["FullName"].ToString();
-                                txtEmail.Text = row["Email"].ToString();
-                                txtCourse.Text = row["Course"].ToString();
-
-                                // Convert int YearLevel back to text for ddlYearLevel
-                                ddlYearLevel.SelectedValue = YearLevelToText(Convert.ToInt32(row["YearLevel"]));
-                                txtPassword.Text = "";
-
-                                hfEditingMemberId.Value = row["MemberID"].ToString();
-                                lblRegisterTitle.Text = "Edit Member";
-
-                                ScriptManager.RegisterStartupScript(this, this.GetType(), "Pop",
-                                    "var myModal = new bootstrap.Modal(document.getElementById('memberModal')); myModal.show();", true);
-                            }
-                        }
-                    }
-                    else if (role == "Admin")
-                    {
-                        // For admins, load from tblUsers only
-                        DataTable dt = DatabaseHelper.ExecuteQuery(@"
-                            SELECT UserID, FullName, Email, IsActive
-                            FROM tblUsers
-                            WHERE UserID = @UserID AND Role = 'Admin'",
-                            new SqlParameter[] { new SqlParameter("@UserID", memberId) });
-
-                        if (dt.Rows.Count > 0)
-                        {
-                            DataRow row = dt.Rows[0];
-
-                            txtUserId.Text = row["UserID"].ToString();
-                            txtFullName.Text = row["FullName"].ToString();
-                            txtEmail.Text = row["Email"].ToString();
-                            txtCourse.Text = ""; // Admins don't have course
-                            ddlYearLevel.SelectedIndex = 0; // Admins don't have year level
-                            txtPassword.Text = "";
-
-                            hfEditingMemberId.Value = ""; // Admins don't have MemberID
-                            lblRegisterTitle.Text = "Edit Admin Member";
-
-                            // Select admin role in the modal
-                            ScriptManager.RegisterStartupScript(this, this.GetType(), "setAdminRole",
-                                "selectRole('Admin');", true);
-                            ScriptManager.RegisterStartupScript(this, this.GetType(), "Pop",
-                                "var myModal = new bootstrap.Modal(document.getElementById('memberModal')); myModal.show();", true);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                ScriptManager.RegisterStartupScript(this, this.GetType(), "error",
-                    $"alert('Error: {ex.Message}');", true);
-            }
-        }
-
-        // Called from .aspx TemplateField: GetStatusBadgeClass(Eval("Status"))
-        protected string GetStatusBadgeClass(object statusObj)
-        {
-            if (statusObj == null) return "status-inactive";
-            return statusObj.ToString() == "Active" ? "status-active" : "status-inactive";
-        }
-
-        protected string GetMemberStatus(object statusObj)
-        {
-            if (statusObj == null) return "Inactive";
-            return statusObj.ToString() == "Active" ? "Active" : "Inactive";
         }
 
         protected void btnSearchMember_Click(object sender, EventArgs e)
@@ -570,16 +235,173 @@ namespace prjLibrarySystem
             LoadMembers();
         }
 
-        protected void ddlMembershipType_SelectedIndexChanged(object sender, EventArgs e)
+        protected void ddlMembershipType_SelectedIndexChanged(object sender, EventArgs e) { gvMembers.PageIndex = 0; LoadMembers(); }
+        protected void ddlStatus_SelectedIndexChanged(object sender, EventArgs e) { gvMembers.PageIndex = 0; LoadMembers(); }
+
+        protected void gvMembers_RowCommand(object sender, GridViewCommandEventArgs e)
         {
-            gvMembers.PageIndex = 0;
-            LoadMembers();
+            try
+            {
+                int rowIndex = Convert.ToInt32(e.CommandArgument.ToString());
+                string memberId = gvMembers.DataKeys[rowIndex]["MemberID"].ToString();
+                string role = gvMembers.DataKeys[rowIndex]["Role"].ToString();
+                string adminId = Session["UserID"]?.ToString() ?? "";
+                string adminName = Session["FullName"]?.ToString() ?? "";
+
+                if (e.CommandName == "ToggleStatus")
+                {
+                    DataTable memberDt = DatabaseHelper.ExecuteQuery(
+                        "SELECT MemberID FROM tblMembers WHERE UserID = @UserID",
+                        new SqlParameter[] { new SqlParameter("@UserID", memberId) });
+
+                    if (memberDt.Rows.Count > 0)
+                    {
+                        string actualMemberId = memberDt.Rows[0]["MemberID"].ToString();
+                        DataTable userDt = DatabaseHelper.ExecuteQuery(@"
+                            SELECT u.UserID, u.IsActive
+                            FROM tblUsers u
+                            INNER JOIN tblMembers m ON u.UserID = m.UserID
+                            WHERE m.MemberID = @MemberID",
+                            new SqlParameter[] { new SqlParameter("@MemberID", actualMemberId) });
+
+                        if (userDt.Rows.Count > 0)
+                        {
+                            string userId = userDt.Rows[0]["UserID"].ToString();
+                            int newActive = Convert.ToInt32(userDt.Rows[0]["IsActive"]) == 1 ? 0 : 1;
+                            DatabaseHelper.ExecuteNonQuery(
+                                "UPDATE tblUsers SET IsActive = @IsActive WHERE UserID = @UserID",
+                                new SqlParameter[]
+                                {
+                                    new SqlParameter("@IsActive", newActive),
+                                    new SqlParameter("@UserID",   userId)
+                                });
+                            DatabaseHelper.WriteAuditLog(adminId, adminName,
+                                newActive == 1 ? "ACTIVATE_MEMBER" : "DEACTIVATE_MEMBER", "tblUsers", userId);
+                        }
+                    }
+                    LoadMembers();
+                    return;
+                }
+
+                if (e.CommandName == "DeleteMember")
+                {
+                    DataTable memberDt = DatabaseHelper.ExecuteQuery(
+                        "SELECT MemberID FROM tblMembers WHERE UserID = @UserID",
+                        new SqlParameter[] { new SqlParameter("@UserID", memberId) });
+
+                    if (memberDt.Rows.Count > 0)
+                    {
+                        string actualMemberId = memberDt.Rows[0]["MemberID"].ToString();
+
+                        DataTable checkDt = DatabaseHelper.ExecuteQuery(
+                            "SELECT COUNT(*) FROM tblTransactions WHERE MemberID = @MemberID AND Status = 'Active'",
+                            new SqlParameter[] { new SqlParameter("@MemberID", actualMemberId) });
+
+                        if (Convert.ToInt32(checkDt.Rows[0][0]) > 0)
+                        {
+                            ScriptManager.RegisterStartupScript(this, GetType(), "alert",
+                                "alert('Cannot delete a member with active borrow transactions.');", true);
+                            return;
+                        }
+
+                        DataTable userDt = DatabaseHelper.ExecuteQuery(
+                            "SELECT UserID FROM tblMembers WHERE MemberID = @MemberID",
+                            new SqlParameter[] { new SqlParameter("@MemberID", actualMemberId) });
+
+                        if (userDt.Rows.Count > 0)
+                        {
+                            string userId = userDt.Rows[0]["UserID"].ToString();
+                            DatabaseHelper.WriteAuditLog(adminId, adminName, "DELETE_MEMBER", "tblUsers", userId);
+                            DatabaseHelper.ExecuteNonQuery("DELETE FROM tblUsers WHERE UserID = @UserID",
+                                new SqlParameter[] { new SqlParameter("@UserID", userId) });
+                        }
+                    }
+
+                    LoadMembers();
+                    ScriptManager.RegisterStartupScript(this, GetType(), "success",
+                        "alert('Member deleted successfully.');", true);
+                    return;
+                }
+
+                if (e.CommandName == "EditMember")
+                {
+                    DataTable memberDt = DatabaseHelper.ExecuteQuery(
+                        "SELECT MemberID FROM tblMembers WHERE UserID = @UserID",
+                        new SqlParameter[] { new SqlParameter("@UserID", memberId) });
+
+                    if (memberDt.Rows.Count > 0)
+                    {
+                        string actualMemberId = memberDt.Rows[0]["MemberID"].ToString();
+                        DataTable dt = DatabaseHelper.ExecuteQuery(@"
+                            SELECT m.MemberID, m.FullName, m.MemberType, m.Course, m.YearLevel,
+                                   u.UserID, u.Email, u.IsActive
+                            FROM tblMembers m
+                            INNER JOIN tblUsers u ON m.UserID = u.UserID
+                            WHERE m.MemberID = @MemberID",
+                            new SqlParameter[] { new SqlParameter("@MemberID", actualMemberId) });
+
+                        if (dt.Rows.Count > 0)
+                        {
+                            DataRow row = dt.Rows[0];
+                            string memberType = row["MemberType"].ToString();
+
+                            txtUserId.Text = row["UserID"].ToString();
+                            txtFullName.Text = row["FullName"].ToString();
+                            txtEmail.Text = row["Email"].ToString();
+                            txtPassword.Text = "";
+                            hfEditingMemberId.Value = row["MemberID"].ToString();
+                            lblRegisterTitle.Text = "Edit Member";
+
+                            if (memberType == "Teacher")
+                            {
+                                txtCourse.Text = "";
+                                ddlYearLevel.SelectedIndex = 0;
+                                ScriptManager.RegisterStartupScript(this, GetType(), "setType",
+                                    "selectMemberType('Teacher');", true);
+                            }
+                            else
+                            {
+                                txtCourse.Text = row["Course"]?.ToString() ?? "";
+                                ddlYearLevel.SelectedValue = YearLevelToText(
+                                    row["YearLevel"] != DBNull.Value ? Convert.ToInt32(row["YearLevel"]) : 1);
+                                ScriptManager.RegisterStartupScript(this, GetType(), "setType",
+                                    "selectMemberType('Student');", true);
+                            }
+
+                            ScriptManager.RegisterStartupScript(this, GetType(), "openModal",
+                                "new bootstrap.Modal(document.getElementById('memberModal')).show();", true);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ScriptManager.RegisterStartupScript(this, GetType(), "error",
+                    $"alert('Error: {ex.Message}');", true);
+            }
         }
 
-        protected void ddlStatus_SelectedIndexChanged(object sender, EventArgs e)
+        protected string GetStatusBadgeClass(object statusObj) =>
+            statusObj?.ToString() == "Active" ? "status-active" : "status-inactive";
+
+        protected string GetMemberStatus(object statusObj) =>
+            statusObj?.ToString() == "Active" ? "Active" : "Inactive";
+
+        private int ParseYearLevel(string text)
         {
-            gvMembers.PageIndex = 0;
-            LoadMembers();
+            switch (text)
+            {
+                case "1st Year": return 1;
+                case "2nd Year": return 2;
+                case "3rd Year": return 3;
+                case "4th Year": return 4;
+                default: return int.TryParse(text?.Substring(0, 1), out int v) ? v : 1;
+            }
+        }
+
+        private string YearLevelToText(int y)
+        {
+            switch (y) { case 1: return "1st Year"; case 2: return "2nd Year"; case 3: return "3rd Year"; case 4: return "4th Year"; default: return "1st Year"; }
         }
     }
 }

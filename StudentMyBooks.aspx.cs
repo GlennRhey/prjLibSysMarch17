@@ -11,20 +11,19 @@ namespace prjLibrarySystem
     {
         protected void Page_Load(object sender, EventArgs e)
         {
-            // FIX: Session["Username"] -> Session["UserID"], Session["UserRole"] -> Session["Role"]
             if (Session["UserID"] == null || Session["Role"] == null)
             {
                 Response.Redirect("Login.aspx");
                 return;
             }
 
-            if (Session["Role"].ToString() != "Student")
+            // CHANGED: 'Student' → 'Member'
+            if (Session["Role"].ToString() != "Member")
             {
                 Response.Redirect("AdminDashboard.aspx");
                 return;
             }
 
-            // FIX: Use FullName with fallback to UserID
             lblStudentName.Text = "Welcome, " + (Session["FullName"] ?? Session["UserID"]).ToString();
 
             if (!IsPostBack)
@@ -37,17 +36,13 @@ namespace prjLibrarySystem
         private void LoadMyBooks()
         {
             string memberIdStr = Session["MemberID"]?.ToString() ?? "";
-            if (string.IsNullOrEmpty(memberIdStr))
-            {
-                ShowError("Session expired. Please log in again.");
-                return;
-            }
+            if (string.IsNullOrEmpty(memberIdStr)) { ShowError("Session expired. Please log in again."); return; }
 
             int memberId = Convert.ToInt32(memberIdStr);
 
             try
             {
-                string query = @"
+                DataTable dt = DatabaseHelper.ExecuteQuery(@"
                     SELECT
                         t.BorrowID,
                         b.Title,
@@ -73,9 +68,7 @@ namespace prjLibrarySystem
                     INNER JOIN tblBooks b ON b.ISBN = t.ISBN
                     WHERE t.MemberID      = @MemberID
                       AND t.RequestStatus != 'Rejected'
-                    ORDER BY t.BorrowDate DESC";
-
-                DataTable dt = DatabaseHelper.ExecuteQuery(query,
+                    ORDER BY t.BorrowDate DESC",
                     new SqlParameter[] { new SqlParameter("@MemberID", memberId) });
 
                 gvMyBooks.DataSource = dt;
@@ -89,11 +82,7 @@ namespace prjLibrarySystem
             }
         }
 
-        protected void btnRefresh_Click(object sender, EventArgs e)
-        {
-            HideStatusMessage();
-            LoadMyBooks();
-        }
+        protected void btnRefresh_Click(object sender, EventArgs e) { HideStatusMessage(); LoadMyBooks(); }
 
         protected void gvMyBooks_PageIndexChanging(object sender, GridViewPageEventArgs e)
         {
@@ -110,32 +99,20 @@ namespace prjLibrarySystem
             if (!int.TryParse(e.CommandArgument.ToString(), out borrowId)) return;
 
             if (e.CommandName == "ReturnBook")
-            {
-                HideStatusMessage();
-                HandleReturn(borrowId);
-            }
+            { HideStatusMessage(); HandleReturn(borrowId); }
             else if (e.CommandName == "ViewDetail")
-            {
-                ShowDetailModal(borrowId);
-            }
+            { ShowDetailModal(borrowId); }
         }
 
         private void ShowDetailModal(int borrowId)
         {
             try
             {
-                // BorrowID is the PK and already unique — no need to filter by MemberID
                 DataTable dt = DatabaseHelper.ExecuteQuery(@"
                     SELECT
-                        b.Title,
-                        b.Author,
-                        b.ISBN,
-                        t.BorrowDate,
-                        t.DueDate,
-                        t.ReturnDate,
-                        t.RequestType,
-                        t.RequestStatus,
-                        t.Status,
+                        b.Title, b.Author, b.ISBN,
+                        t.BorrowDate, t.DueDate, t.ReturnDate,
+                        t.RequestType, t.RequestStatus, t.Status,
                         t.AdminID,
                         u.FullName AS AdminName,
                         u.Email    AS AdminEmail,
@@ -151,13 +128,10 @@ namespace prjLibrarySystem
                             ELSE t.Status
                         END AS DisplayStatus
                     FROM  tblTransactions t
-                    INNER JOIN tblBooks b ON b.ISBN = t.ISBN
-                    LEFT  JOIN tblUsers u ON u.UserID = t.AdminID
+                    INNER JOIN tblBooks b ON b.ISBN    = t.ISBN
+                    LEFT  JOIN tblUsers u ON u.UserID  = t.AdminID
                     WHERE t.BorrowID = @BorrowID",
-                    new SqlParameter[]
-                    {
-                        new SqlParameter("@BorrowID", borrowId)
-                    });
+                    new SqlParameter[] { new SqlParameter("@BorrowID", borrowId) });
 
                 if (dt.Rows.Count == 0) { ShowError("Details not found."); return; }
 
@@ -190,10 +164,7 @@ namespace prjLibrarySystem
 
                 ScriptManager.RegisterStartupScript(this, GetType(), "showDetail", script, true);
             }
-            catch (Exception ex)
-            {
-                ShowError("Error loading details: " + ex.Message);
-            }
+            catch (Exception ex) { ShowError("Error loading details: " + ex.Message); }
         }
 
         private void HandleReturn(int borrowId)
@@ -201,19 +172,14 @@ namespace prjLibrarySystem
             try
             {
                 string memberIdStr = Session["MemberID"]?.ToString() ?? "";
-                if (string.IsNullOrEmpty(memberIdStr))
-                {
-                    ShowError("Session expired. Please log in again.");
-                    return;
-                }
+                if (string.IsNullOrEmpty(memberIdStr)) { ShowError("Session expired."); return; }
 
                 int memberId = Convert.ToInt32(memberIdStr);
 
                 DataTable dt = DatabaseHelper.ExecuteQuery(@"
                     SELECT BorrowID, ISBN, RequestType, RequestStatus, Status
                     FROM   tblTransactions
-                    WHERE  BorrowID = @BorrowID
-                      AND  MemberID = @MemberID",
+                    WHERE  BorrowID = @BorrowID AND MemberID = @MemberID",
                     new SqlParameter[]
                     {
                         new SqlParameter("@BorrowID", borrowId),
@@ -225,6 +191,7 @@ namespace prjLibrarySystem
                 string requestType = dt.Rows[0]["RequestType"].ToString();
                 string requestStatus = dt.Rows[0]["RequestStatus"].ToString();
                 string status = dt.Rows[0]["Status"].ToString();
+                string isbn = dt.Rows[0]["ISBN"].ToString();
 
                 if (requestStatus != "Accepted" || status != "Active")
                 {
@@ -235,16 +202,10 @@ namespace prjLibrarySystem
                     return;
                 }
 
-                string isbn = dt.Rows[0]["ISBN"].ToString();
-
-                // Check for existing pending return
                 int existingReturn = Convert.ToInt32(DatabaseHelper.ExecuteScalar(@"
-                    SELECT COUNT(*)
-                    FROM   tblTransactions
-                    WHERE  MemberID      = @MemberID
-                      AND  ISBN          = @ISBN
-                      AND  RequestType   = 'Return'
-                      AND  RequestStatus = 'Pending'",
+                    SELECT COUNT(*) FROM tblTransactions
+                    WHERE  MemberID = @MemberID AND ISBN = @ISBN
+                      AND  RequestType = 'Return' AND RequestStatus = 'Pending'",
                     new SqlParameter[]
                     {
                         new SqlParameter("@MemberID", memberId),
@@ -252,26 +213,18 @@ namespace prjLibrarySystem
                     }));
 
                 if (existingReturn > 0)
-                {
-                    ShowError("A return request for this book is already pending admin approval.");
-                    return;
-                }
+                { ShowError("A return request for this book is already pending admin approval."); return; }
 
-                // Update borrow row to flag as pending return
                 DatabaseHelper.ExecuteNonQuery(@"
                     UPDATE tblTransactions
-                    SET    RequestType   = 'Return',
-                           RequestStatus = 'Pending'
+                    SET    RequestType = 'Return', RequestStatus = 'Pending'
                     WHERE  BorrowID = @BorrowID",
                     new SqlParameter[] { new SqlParameter("@BorrowID", borrowId) });
 
                 ShowSuccess("Return request submitted. Please wait for librarian approval.");
                 LoadMyBooks();
             }
-            catch (Exception ex)
-            {
-                ShowError("Error submitting return request: " + ex.Message);
-            }
+            catch (Exception ex) { ShowError("Error submitting return request: " + ex.Message); }
         }
 
         protected string GetStatusBadgeClass(object displayStatus)
@@ -288,10 +241,7 @@ namespace prjLibrarySystem
             }
         }
 
-        protected string GetBookStatus(object displayStatus)
-        {
-            return displayStatus?.ToString() ?? "Unknown";
-        }
+        protected string GetBookStatus(object displayStatus) => displayStatus?.ToString() ?? "Unknown";
 
         protected void btnChangePassword_Click(object sender, EventArgs e)
         {
@@ -317,21 +267,12 @@ namespace prjLibrarySystem
             {
                 bool success = DatabaseHelper.ChangePassword(Session["UserID"].ToString(), current, newPass);
                 if (success)
-                {
-                    txtCurrentPassword.Text = txtNewPassword.Text = txtConfirmPassword.Text = "";
-                    ShowPasswordSuccess("Password changed successfully!");
-                }
+                { txtCurrentPassword.Text = txtNewPassword.Text = txtConfirmPassword.Text = ""; ShowPasswordSuccess("Password changed successfully!"); }
                 else
-                {
-                    ShowPasswordError("Current password is incorrect.");
-                }
+                { ShowPasswordError("Current password is incorrect."); }
                 KeepModalOpen();
             }
-            catch (Exception ex)
-            {
-                ShowPasswordError("An error occurred: " + ex.Message);
-                KeepModalOpen();
-            }
+            catch (Exception ex) { ShowPasswordError("An error occurred: " + ex.Message); KeepModalOpen(); }
         }
 
         private void ShowSuccess(string message)
@@ -357,23 +298,12 @@ namespace prjLibrarySystem
         }
 
         private void ShowPasswordError(string msg)
-        {
-            lblPasswordError.Text = msg;
-            passwordError.Style["display"] = "block";
-            passwordSuccess.Style["display"] = "none";
-        }
+        { lblPasswordError.Text = msg; passwordError.Style["display"] = "block"; passwordSuccess.Style["display"] = "none"; }
 
         private void ShowPasswordSuccess(string msg)
-        {
-            lblPasswordSuccess.Text = msg;
-            passwordSuccess.Style["display"] = "block";
-            passwordError.Style["display"] = "none";
-        }
+        { lblPasswordSuccess.Text = msg; passwordSuccess.Style["display"] = "block"; passwordError.Style["display"] = "none"; }
 
         private void HidePasswordMessages()
-        {
-            passwordError.Style["display"] = "none";
-            passwordSuccess.Style["display"] = "none";
-        }
+        { passwordError.Style["display"] = "none"; passwordSuccess.Style["display"] = "none"; }
     }
 }

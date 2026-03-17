@@ -10,11 +10,14 @@ namespace prjLibrarySystem
     {
         protected void Page_Load(object sender, EventArgs e)
         {
-            // Redirect already-logged-in users to their dashboard
             if (Session["Role"] != null && Session["UserID"] != null)
             {
-                Response.Redirect(Session["Role"].ToString() == "Admin"
-                    ? "AdminDashboard.aspx" : "StudentDashboard.aspx");
+                switch (Session["Role"].ToString())
+                {
+                    case "Super Admin": Response.Redirect("SuperAdminDashboard.aspx"); break;
+                    case "Admin": Response.Redirect("AdminDashboard.aspx"); break;
+                    default: Response.Redirect("StudentDashboard.aspx"); break;
+                }
             }
         }
 
@@ -22,64 +25,63 @@ namespace prjLibrarySystem
         {
             string userId = txtUsername.Text.Trim();
             string password = txtPassword.Text.Trim();
-            string role = hfSelectedRole.Value;
+            string roleBtn = Request.Form["hfSelectedRole"] ?? "Member";
 
             if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(password))
-            {
-                ShowError("Please enter both User ID and password.");
-                return;
-            }
+            { ShowError("Please enter both User ID and password."); return; }
 
             try
             {
                 User user = DatabaseHelper.AuthenticateUser(userId, password);
 
                 if (user == null)
-                {
-                    ShowError("Invalid User ID or password, or account is inactive.");
-                    return;
-                }
+                { ShowError("Invalid User ID or password, or account is inactive."); return; }
 
-                if (user.Role != role)
-                {
-                    ShowError($"Wrong role selected. This account is registered as '{user.Role}'.");
-                    return;
-                }
+                if (roleBtn == "Member" && (user.Role == "Admin" || user.Role == "Super Admin"))
+                { ShowError("Wrong role selected. This account is registered as 'Admin'."); return; }
+
+                if (roleBtn == "Admin" && user.Role == "Member")
+                { ShowError("Wrong role selected. This account is registered as 'Member'."); return; }
 
                 Session["UserID"] = user.UserID;
                 Session["Role"] = user.Role;
                 Session["Email"] = user.Email;
                 Session["LoginTime"] = DateTime.Now;
 
-                if (user.Role == "Admin")
+                switch (user.Role)
                 {
-                    Session["FullName"] = user.FullName;
-                    Response.Redirect("AdminDashboard.aspx");
-                }
-                else
-                {
-                    DataTable memberDt = DatabaseHelper.ExecuteQuery(
-                        "SELECT MemberID, FullName FROM tblMembers WHERE UserID = @UserID",
-                        new SqlParameter[] { new SqlParameter("@UserID", userId) });
+                    case "Super Admin":
+                        Session["FullName"] = user.FullName;
+                        Response.Redirect("SuperAdminDashboard.aspx");
+                        break;
 
-                    if (memberDt.Rows.Count > 0)
-                    {
-                        Session["MemberID"] = memberDt.Rows[0]["MemberID"].ToString();
-                        Session["FullName"] = memberDt.Rows[0]["FullName"].ToString();
-                    }
-                    else
-                    {
-                        Session["MemberID"] = "";
-                        Session["FullName"] = userId;
-                    }
+                    case "Admin":
+                        Session["FullName"] = user.FullName;
+                        Response.Redirect("AdminDashboard.aspx");
+                        break;
 
-                    Response.Redirect("StudentDashboard.aspx");
+                    default:
+                        DataTable dt = DatabaseHelper.ExecuteQuery(
+                            "SELECT MemberID, FullName, MemberType FROM tblMembers WHERE UserID = @UserID",
+                            new SqlParameter[] { new SqlParameter("@UserID", userId) });
+
+                        if (dt.Rows.Count > 0)
+                        {
+                            Session["MemberID"] = dt.Rows[0]["MemberID"].ToString();
+                            Session["FullName"] = dt.Rows[0]["FullName"].ToString();
+                            Session["MemberType"] = dt.Rows[0]["MemberType"].ToString();
+                        }
+                        else
+                        {
+                            Session["MemberID"] = "";
+                            Session["FullName"] = userId;
+                            Session["MemberType"] = "Student";
+                        }
+                        Response.Redirect("StudentDashboard.aspx");
+                        break;
                 }
             }
-            catch (Exception ex)
-            {
-                ShowError("Login failed: " + ex.Message);
-            }
+            catch (Exception ex) { ShowError("Login failed: " + ex.Message); }
         }
 
         private void ShowError(string message)

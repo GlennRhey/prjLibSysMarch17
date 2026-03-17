@@ -10,19 +10,15 @@ namespace prjLibrarySystem
     {
         protected void Page_Load(object sender, EventArgs e)
         {
-            if (Session["UserID"] == null)
-            {
-                Response.Redirect("Login.aspx");
-                return;
-            }
+            if (Session["UserID"] == null) { Response.Redirect("Login.aspx"); return; }
 
-            if (Session["Role"]?.ToString() != "Admin")
-            {
-                Response.Redirect("StudentDashboard.aspx");
-                return;
-            }
+            string role = Session["Role"]?.ToString();
 
-            lblAdminName.Text = "Welcome, " + (Session["FullName"] ?? Session["UserID"]).ToString();
+            // Super Admin must never land on the Admin dashboard
+            if (role == "Super Admin") { Response.Redirect("SuperAdminDashboard.aspx"); return; }
+            if (role != "Admin") { Response.Redirect("StudentDashboard.aspx"); return; }
+
+            lblAdminName.Text = (Session["FullName"] ?? Session["UserID"]).ToString();
 
             if (!IsPostBack)
             {
@@ -37,29 +33,20 @@ namespace prjLibrarySystem
         {
             try
             {
-                SqlParameter[] emptyParams = new SqlParameter[0];
-
-                lblTotalBooks.Text = DatabaseHelper.ExecuteQuery(
-                    "SELECT COUNT(*) FROM tblBooks",
-                    emptyParams).Rows[0][0].ToString();
-
+                var p = new SqlParameter[0];
+                lblTotalBooks.Text = DatabaseHelper.ExecuteQuery("SELECT COUNT(*) FROM tblBooks", p).Rows[0][0].ToString();
                 lblTotalMembers.Text = DatabaseHelper.ExecuteQuery(@"
                     SELECT COUNT(*) FROM tblMembers m
-                    INNER JOIN tblUsers u ON m.UserID = u.UserID
-                    WHERE u.IsActive = 1",
-                    emptyParams).Rows[0][0].ToString();
-
+                    INNER JOIN tblUsers u ON m.UserID = u.UserID WHERE u.IsActive = 1", p).Rows[0][0].ToString();
                 lblActiveLoans.Text = DatabaseHelper.ExecuteQuery(
-                    "SELECT COUNT(*) FROM tblTransactions WHERE Status = 'Active'",
-                    emptyParams).Rows[0][0].ToString();
-
+                    "SELECT COUNT(*) FROM tblTransactions WHERE Status = 'Active'", p).Rows[0][0].ToString();
                 lblOverdueBooks.Text = DatabaseHelper.ExecuteQuery(
-                    "SELECT COUNT(*) FROM tblTransactions WHERE Status = 'Active' AND DueDate < GETDATE()",
-                    emptyParams).Rows[0][0].ToString();
+                    "SELECT COUNT(*) FROM tblTransactions WHERE Status = 'Active' AND DueDate < GETDATE()", p).Rows[0][0].ToString();
             }
             catch
             {
-                lblTotalBooks.Text = lblTotalMembers.Text = lblActiveLoans.Text = lblOverdueBooks.Text = "N/A";
+                lblTotalBooks.Text = lblTotalMembers.Text =
+                lblActiveLoans.Text = lblOverdueBooks.Text = "N/A";
             }
         }
 
@@ -67,108 +54,76 @@ namespace prjLibrarySystem
         {
             try
             {
-                SqlParameter[] emptyParams = new SqlParameter[0];
-
                 DataTable dt = DatabaseHelper.ExecuteQuery(@"
-                    SELECT TOP 10
-                        b.Title    AS BookTitle,
-                        m.FullName AS MemberName,
-                        t.BorrowDate AS LoanDate
+                    SELECT TOP 10 b.Title AS BookTitle, m.FullName AS MemberName, t.BorrowDate AS LoanDate
                     FROM tblTransactions t
                     INNER JOIN tblMembers m ON t.MemberID = m.MemberID
-                    INNER JOIN tblBooks   b ON t.ISBN = b.ISBN
-                    WHERE t.Status = 'Active'
-                    ORDER BY t.BorrowDate DESC",
-                    emptyParams);
-
+                    INNER JOIN tblBooks   b ON t.ISBN     = b.ISBN
+                    WHERE t.Status = 'Active' ORDER BY t.BorrowDate DESC", new SqlParameter[0]);
                 gvRecentLoans.DataSource = dt;
                 gvRecentLoans.DataBind();
             }
-            catch
-            {
-                gvRecentLoans.DataSource = null;
-                gvRecentLoans.DataBind();
-            }
+            catch { gvRecentLoans.DataSource = null; gvRecentLoans.DataBind(); }
         }
 
         private void LoadPopularBooks()
         {
             try
             {
-                SqlParameter[] emptyParams = new SqlParameter[0];
-
                 DataTable dt = DatabaseHelper.ExecuteQuery(@"
-                    SELECT TOP 10
-                        b.Title, b.Author,
-                        COUNT(t.BorrowID) AS LoanCount
+                    SELECT TOP 10 b.Title, b.Author, COUNT(t.BorrowID) AS LoanCount
                     FROM tblBooks b
-                    LEFT JOIN tblTransactions t
-                        ON b.ISBN = t.ISBN
-                        AND t.RequestType = 'Borrow'
-                        AND t.RequestStatus = 'Accepted'
-                    GROUP BY b.ISBN, b.Title, b.Author
-                    ORDER BY LoanCount DESC",
-                    emptyParams);
-
+                    LEFT JOIN tblTransactions t ON b.ISBN = t.ISBN
+                        AND t.RequestType = 'Borrow' AND t.RequestStatus = 'Accepted'
+                    GROUP BY b.ISBN, b.Title, b.Author ORDER BY LoanCount DESC", new SqlParameter[0]);
                 gvPopularBooks.DataSource = dt;
                 gvPopularBooks.DataBind();
             }
-            catch
-            {
-                gvPopularBooks.DataSource = null;
-                gvPopularBooks.DataBind();
-            }
+            catch { gvPopularBooks.DataSource = null; gvPopularBooks.DataBind(); }
         }
 
         private void LoadNotifications()
         {
             try
             {
-                string query = @"
+                DataTable dt = DatabaseHelper.ExecuteQuery(@"
                     SELECT TOP 10 Subject, Recipient, Message, CreatedAt, Status, IsRead
-                    FROM tblNotifications
-                    ORDER BY CreatedAt DESC";
-
-                DataTable dt = DatabaseHelper.ExecuteQuery(query, new SqlParameter[0]);
+                    FROM tblNotifications ORDER BY CreatedAt DESC", new SqlParameter[0]);
 
                 if (dt.Rows.Count > 0)
                 {
-                    int unreadCount = 0;
+                    int unread = 0;
                     foreach (DataRow r in dt.Rows)
-                        if (!Convert.ToBoolean(r["IsRead"])) unreadCount++;
+                        if (!Convert.ToBoolean(r["IsRead"])) unread++;
 
-                    adminNotificationBadge.Text = unreadCount > 0 ? unreadCount.ToString() : "0";
+                    adminNotificationBadge.Text = unread > 0 ? unread.ToString() : "0";
 
-                    string modalHtml = "";
+                    string html = "";
                     foreach (DataRow row in dt.Rows)
                     {
-                        string createdAt = Convert.ToDateTime(row["CreatedAt"]).ToString("MMM dd, yyyy HH:mm");
+                        string date = Convert.ToDateTime(row["CreatedAt"]).ToString("MMM dd, yyyy HH:mm");
                         string subject = System.Web.HttpUtility.HtmlEncode(row["Subject"].ToString());
                         string message = System.Web.HttpUtility.HtmlEncode(row["Message"].ToString());
                         string recipient = System.Web.HttpUtility.HtmlEncode(row["Recipient"].ToString());
                         string status = row["Status"].ToString();
                         bool isRead = Convert.ToBoolean(row["IsRead"]);
-                        string statusClass = status == "Sent" ? "success" : (status == "Pending" ? "warning" : "danger");
-                        string unreadStyle = !isRead ? "border-left: 3px solid #ffc107;" : "";
-
-                        modalHtml += $@"
-                            <div class='card mb-2' style='{unreadStyle}'>
-                                <div class='card-body'>
-                                    <div class='d-flex justify-content-between align-items-start'>
-                                        <div>
-                                            <h6 class='mb-1'>{subject}</h6>
-                                            <p class='mb-1 text-muted'>{message}</p>
-                                            <small class='text-muted'>To: {recipient} &mdash; {createdAt}</small>
-                                        </div>
-                                        <span class='badge bg-{statusClass}'>{status}</span>
+                        string sc = status == "Sent" ? "success" : (status == "Pending" ? "warning" : "danger");
+                        string border = !isRead ? "border-left:3px solid #ffc107;" : "";
+                        html += $@"<div class='card mb-2' style='{border}'>
+                            <div class='card-body'>
+                                <div class='d-flex justify-content-between align-items-start'>
+                                    <div>
+                                        <h6 class='mb-1'>{subject}</h6>
+                                        <p class='mb-1 text-muted'>{message}</p>
+                                        <small class='text-muted'>To: {recipient} &mdash; {date}</small>
                                     </div>
+                                    <span class='badge bg-{sc}'>{status}</span>
                                 </div>
-                            </div>";
+                            </div>
+                        </div>";
                     }
-
-                    notificationsList.InnerHtml = modalHtml;
+                    notificationsList.InnerHtml = html;
                     noNotificationsModal.Visible = false;
-
                     gvNotifications.DataSource = dt;
                     gvNotifications.DataBind();
                 }
@@ -197,7 +152,6 @@ namespace prjLibrarySystem
             {
                 DatabaseHelper.SendDueDateReminders();
                 LoadNotifications();
-
                 ScriptManager.RegisterStartupScript(this, GetType(), "reminderSuccess",
                     "alert('Due date reminders sent successfully!');", true);
             }

@@ -65,6 +65,9 @@
     <Reference Include="System.EnterpriseServices" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="AuditLogs.aspx" />
+    <Content Include="SuperAdminDashboard.aspx" />
+    <Content Include="SuperAdminMembers.aspx" />
     <Content Include="Web.config" />
     <Content Include="AdminDashboard.aspx" />
     <Content Include="Books.aspx" />
@@ -78,6 +81,14 @@
     <Content Include="reports.aspx" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AuditLogs.aspx.cs">
+      <DependentUpon>AuditLogs.aspx</DependentUpon>
+      <SubType>ASPXCodeBehind</SubType>
+    </Compile>
+    <Compile Include="AuditLogs.aspx.designer.cs">
+      <DependentUpon>AuditLogs.aspx</DependentUpon>
+    </Compile>
+    <Compile Include="Models\SidebarHelper.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="AdminDashboard.aspx.cs">
       <DependentUpon>AdminDashboard.aspx</DependentUpon>
@@ -148,6 +159,20 @@
     </Compile>
     <Compile Include="reports.aspx.designer.cs">
       <DependentUpon>reports.aspx</DependentUpon>
+    </Compile>
+    <Compile Include="SuperAdminDashboard.aspx.cs">
+      <DependentUpon>SuperAdminDashboard.aspx</DependentUpon>
+      <SubType>ASPXCodeBehind</SubType>
+    </Compile>
+    <Compile Include="SuperAdminDashboard.aspx.designer.cs">
+      <DependentUpon>SuperAdminDashboard.aspx</DependentUpon>
+    </Compile>
+    <Compile Include="SuperAdminMembers.aspx.cs">
+      <DependentUpon>SuperAdminMembers.aspx</DependentUpon>
+      <SubType>ASPXCodeBehind</SubType>
+    </Compile>
+    <Compile Include="SuperAdminMembers.aspx.designer.cs">
+      <DependentUpon>SuperAdminMembers.aspx</DependentUpon>
     </Compile>
   </ItemGroup>
   <ItemGroup>

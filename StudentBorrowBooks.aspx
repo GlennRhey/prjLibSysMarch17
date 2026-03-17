@@ -7,15 +7,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css?v=2.0" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css?v=2.0" rel="stylesheet">
     <style>
-        .sidebar {
-            min-height: 100vh;
-            background: linear-gradient(135deg, #8b0000 0%, #b11226 100%);
-        }
-        .sidebar .nav-link {
-            color: white;
-            padding: 15px 20px;
-            border-radius: 0;
-        }
+        .sidebar { min-height: 100vh; background: linear-gradient(135deg, #8b0000 0%, #b11226 100%); }
+        .sidebar .nav-link { color: white; padding: 15px 20px; border-radius: 0; }
         .sidebar .nav-link:hover  { background-color: rgba(255,255,255,0.1); color: white; }
         .sidebar .nav-link.active { background: rgba(255,255,255,0.2); border-left: 4px solid white; }
         .main-content { padding: 20px; }
@@ -23,33 +16,14 @@
         .book-cover {
             width: 50px; height: 70px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 5px;
-            display: flex; align-items: center; justify-content: center;
-            color: white; font-size: 1.3rem;
+            border-radius: 5px; display: flex; align-items: center;
+            justify-content: center; color: white; font-size: 1.3rem;
         }
         .borrow-btn { border-radius: 20px; font-size: 0.85rem; }
-        .card-body {
-            padding: 0;
-        }
-        .table {
-            table-layout: fixed;
-            width: 100%;
-            margin-bottom: 0;
-        }
-        .table th,
-        .table td {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            vertical-align: middle;
-            padding-left: 12px;
-        }
-        .table th {
-            height: 52px;
-        }
-        .table td {
-            height: 66px;
-        }
+        .card-body { padding: 0; }
+        .table { table-layout: fixed; width: 100%; margin-bottom: 0; }
+        .table th, .table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; padding-left: 12px; }
+        .table th { height: 52px; } .table td { height: 66px; }
         .table th:nth-child(1), .table td:nth-child(1) { width: 80px; }
         .table th:nth-child(2), .table td:nth-child(2) { width: 25%; }
         .table th:nth-child(3), .table td:nth-child(3) { width: 20%; }
@@ -57,50 +31,11 @@
         .table th:nth-child(5), .table td:nth-child(5) { width: 120px; }
         .table th:nth-child(6), .table td:nth-child(6) { width: 100px; }
         tr.pagination { display: none !important; }
-        .pagination-bar {
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-            padding: 0 12px;
-            height: 54px;
-            border-top: 1px solid #f0f0f0;
-            background: #fff;
-            border-radius: 0 0 4px 4px;
-        }
-        .pagination-bar a,
-        .pagination-bar span {
-            color: #555;
-            display: inline-block;
-            padding: 6px 12px;
-            text-decoration: none !important;
-            border: 1px solid #ddd;
-            margin: 0 2px;
-            border-radius: 6px;
-            font-weight: 500;
-            font-size: 13px;
-            transition: all 0.25s ease;
-        }
-        .pagination-bar a:hover {
-            border-color: #8b0000 !important;
-            color: #8b0000 !important;
-            transform: translateY(-2px);
-            background-color: transparent !important;
-            text-decoration: none !important;
-            box-shadow: none !important;
-        }
-        .pagination-bar span {
-            background-color: #8b0000;
-            color: white !important;
-            border-color: #8b0000;
-            cursor: default;
-        }
-        .pagination-bar a.disabled-link {
-            color: #aaa !important;
-            background-color: #f5f5f5 !important;
-            border-color: #ddd !important;
-            pointer-events: none;
-            transform: none !important;
-        }
+        .pagination-bar { display: flex; align-items: center; justify-content: flex-start; padding: 0 12px; height: 54px; border-top: 1px solid #f0f0f0; background: #fff; border-radius: 0 0 4px 4px; }
+        .pagination-bar a, .pagination-bar span { color: #555; display: inline-block; padding: 6px 12px; text-decoration: none !important; border: 1px solid #ddd; margin: 0 2px; border-radius: 6px; font-weight: 500; font-size: 13px; transition: all 0.25s ease; }
+        .pagination-bar a:hover { border-color: #8b0000 !important; color: #8b0000 !important; transform: translateY(-2px); background-color: transparent !important; }
+        .pagination-bar span { background-color: #8b0000; color: white !important; border-color: #8b0000; cursor: default; }
+        .pagination-bar a.disabled-link { color: #aaa !important; background-color: #f5f5f5 !important; border-color: #ddd !important; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -109,7 +44,6 @@
     <div class="container-fluid">
         <div class="row">
 
-            <!-- Sidebar -->
             <nav class="col-12 col-md-3 col-lg-2 d-block sidebar">
                 <div class="position-sticky pt-3">
                     <div class="text-center mb-4">
@@ -120,36 +54,15 @@
                         </small>
                     </div>
                     <ul class="nav flex-column">
-                        <li class="nav-item">
-                            <a class="nav-link" href="StudentDashboard.aspx">
-                                <i class="fas fa-tachometer-alt me-2"></i> Dashboard
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link active" href="StudentBorrowBooks.aspx">
-                                <i class="fas fa-book me-2"></i> Borrow Books
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="StudentMyBooks.aspx">
-                                <i class="fas fa-book-reader me-2"></i> My Books
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
-                                <i class="fas fa-key me-2"></i> Change Password
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="Logout.aspx">
-                                <i class="fas fa-sign-out-alt me-2"></i> Logout
-                            </a>
-                        </li>
+                        <li class="nav-item"><a class="nav-link" href="StudentDashboard.aspx"><i class="fas fa-tachometer-alt me-2"></i> Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link active" href="StudentBorrowBooks.aspx"><i class="fas fa-book me-2"></i> Borrow Books</a></li>
+                        <li class="nav-item"><a class="nav-link" href="StudentMyBooks.aspx"><i class="fas fa-book-reader me-2"></i> My Books</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#changePasswordModal"><i class="fas fa-key me-2"></i> Change Password</a></li>
+                        <li class="nav-item"><a class="nav-link" href="Logout.aspx"><i class="fas fa-sign-out-alt me-2"></i> Logout</a></li>
                     </ul>
                 </div>
             </nav>
 
-            <!-- Main Content -->
             <main class="col-12 col-md-9 col-lg-10 px-md-4 main-content">
                 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
                     <h1 class="h2"><i class="fas fa-book me-2"></i>Borrow Books</h1>
@@ -157,19 +70,17 @@
                         CssClass="btn btn-outline-secondary btn-sm" OnClick="btnRefresh_Click" />
                 </div>
 
-                <!-- Status message panel (success / error feedback) -->
                 <asp:Panel ID="pnlStatus" runat="server" Visible="false" CssClass="alert alert-dismissible fade show">
                     <asp:Label ID="lblStatusMessage" runat="server"></asp:Label>
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </asp:Panel>
 
-                <!-- Info banner -->
+                <%-- Info banner: populated server-side from tblSystemSettings --%>
                 <div class="alert alert-info d-flex align-items-center mb-3" role="alert">
                     <i class="fas fa-info-circle me-2"></i>
-                    <span>You may borrow up to <strong>3 books</strong> and have up to <strong>3 pending requests</strong> at a time. All requests require librarian approval.</span>
+                    <asp:Label ID="lblBorrowInfo" runat="server"></asp:Label>
                 </div>
 
-                <!-- Search & Filter -->
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <div class="input-group">
@@ -193,14 +104,11 @@
                     </div>
                 </div>
 
-                <!-- Available Books -->
                 <div class="card shadow mb-4">
                     <div class="card-header py-3">
                         <h6 class="m-0 font-weight-bold text-primary">Available Books</h6>
                     </div>
                     <div class="card-body">
-
-                        <!-- Books Grid -->
                         <asp:GridView ID="gvAvailableBooks" runat="server"
                             CssClass="table table-hover align-middle"
                             AutoGenerateColumns="false" GridLines="None"
@@ -209,15 +117,11 @@
                             OnRowCommand="gvAvailableBooks_RowCommand">
                             <Columns>
                                 <asp:TemplateField HeaderText="">
-                                    <ItemTemplate>
-                                        <div class="book-cover"><i class="fas fa-book"></i></div>
-                                    </ItemTemplate>
+                                    <ItemTemplate><div class="book-cover"><i class="fas fa-book"></i></div></ItemTemplate>
                                 </asp:TemplateField>
-
-                                <asp:BoundField DataField="Title"    HeaderText="Title"    />
-                                <asp:BoundField DataField="Author"   HeaderText="Author"   />
+                                <asp:BoundField DataField="Title"    HeaderText="Title" />
+                                <asp:BoundField DataField="Author"   HeaderText="Author" />
                                 <asp:BoundField DataField="Category" HeaderText="Category" />
-
                                 <asp:TemplateField HeaderText="Copies Available">
                                     <ItemTemplate>
                                         <span class='badge <%# Convert.ToInt32(Eval("AvailableCopies")) > 0 ? "bg-success" : "bg-danger" %>'>
@@ -225,10 +129,8 @@
                                         </span>
                                     </ItemTemplate>
                                 </asp:TemplateField>
-
                                 <asp:TemplateField HeaderText="Action">
                                     <ItemTemplate>
-                                        <%-- No OnClientClick — confirm() breaks GridView RowCommand in WebForms --%>
                                         <asp:Button ID="btnBorrow" runat="server"
                                             Text="Request Borrow"
                                             CssClass="btn btn-success borrow-btn btn-sm"
@@ -247,14 +149,12 @@
                             <PagerStyle CssClass="pagination" />
                         </asp:GridView>
                         <div class="pagination-bar" id="customPagerBooks"></div>
-
                     </div>
                 </div>
             </main>
         </div>
     </div>
 
-    <!-- Change Password Modal -->
     <div class="modal fade" id="changePasswordModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -265,18 +165,15 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Current Password</label>
-                        <asp:TextBox ID="txtCurrentPassword" runat="server" TextMode="Password"
-                            CssClass="form-control" placeholder="Enter current password" />
+                        <asp:TextBox ID="txtCurrentPassword" runat="server" TextMode="Password" CssClass="form-control" placeholder="Enter current password" />
                     </div>
                     <div class="mb-3">
                         <label class="form-label">New Password</label>
-                        <asp:TextBox ID="txtNewPassword" runat="server" TextMode="Password"
-                            CssClass="form-control" placeholder="Minimum 6 characters" />
+                        <asp:TextBox ID="txtNewPassword" runat="server" TextMode="Password" CssClass="form-control" placeholder="Minimum 6 characters" />
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Confirm New Password</label>
-                        <asp:TextBox ID="txtConfirmPassword" runat="server" TextMode="Password"
-                            CssClass="form-control" placeholder="Re-enter new password" />
+                        <asp:TextBox ID="txtConfirmPassword" runat="server" TextMode="Password" CssClass="form-control" placeholder="Re-enter new password" />
                     </div>
                     <div id="passwordError" class="alert alert-danger" style="display:none;" runat="server">
                         <asp:Label ID="lblPasswordError" runat="server"></asp:Label>
@@ -300,9 +197,7 @@
     window.addEventListener('DOMContentLoaded', function () {
         var builtInPager = document.querySelector('tr.pagination td');
         var customPager = document.getElementById('customPagerBooks');
-        if (builtInPager && customPager) {
-            customPager.innerHTML = builtInPager.innerHTML;
-        }
+        if (builtInPager && customPager) customPager.innerHTML = builtInPager.innerHTML;
     });
 </script>
 </body>

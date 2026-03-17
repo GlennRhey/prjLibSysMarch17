@@ -17,9 +17,10 @@ namespace prjLibrarySystem
                 return;
             }
 
-            if (Session["Role"].ToString() != "Student")
+            // CHANGED: 'Student' → 'Member'
+            if (Session["Role"].ToString() != "Member")
             {
-                Response.Redirect("Login.aspx");
+                Response.Redirect("AdminDashboard.aspx");
                 return;
             }
 
@@ -46,27 +47,23 @@ namespace prjLibrarySystem
             try
             {
                 SqlParameter[] emptyParams = new SqlParameter[0];
-                int memberIdInt = Convert.ToInt32(memberId);
                 SqlParameter[] memberParam = new SqlParameter[]
                 {
-                    new SqlParameter("@MemberID", memberIdInt)
+                    new SqlParameter("@MemberID", Convert.ToInt32(memberId))
                 };
 
                 lblAvailableBooks.Text = DatabaseHelper.ExecuteQuery(
                     "SELECT COUNT(*) FROM tblBooks WHERE AvailableCopies > 0",
                     emptyParams).Rows[0][0].ToString();
 
-                // FIX: Status = 'Active' (not 'Borrowed')
                 lblBorrowedBooks.Text = DatabaseHelper.ExecuteQuery(
                     "SELECT COUNT(*) FROM tblTransactions WHERE MemberID = @MemberID AND Status = 'Active'",
                     memberParam).Rows[0][0].ToString();
 
-                // FIX: Overdue = Active and past due date
                 lblOverdueBooks.Text = DatabaseHelper.ExecuteQuery(
                     "SELECT COUNT(*) FROM tblTransactions WHERE MemberID = @MemberID AND Status = 'Active' AND DueDate < GETDATE()",
                     memberParam).Rows[0][0].ToString();
 
-                // All-time borrows for this member
                 lblTotalBorrowed.Text = DatabaseHelper.ExecuteQuery(
                     "SELECT COUNT(*) FROM tblTransactions WHERE MemberID = @MemberID AND RequestType = 'Borrow' AND RequestStatus = 'Accepted'",
                     memberParam).Rows[0][0].ToString();
@@ -92,49 +89,32 @@ namespace prjLibrarySystem
             HidePasswordMessages();
 
             if (string.IsNullOrEmpty(currentPassword) || string.IsNullOrEmpty(newPassword) || string.IsNullOrEmpty(confirmPassword))
-            {
-                ShowPasswordError("All fields are required.");
-                KeepModalOpen();
-                return;
-            }
+            { ShowPasswordError("All fields are required."); KeepModalOpen(); return; }
 
             if (newPassword.Length < 6)
-            {
-                ShowPasswordError("New password must be at least 6 characters long.");
-                KeepModalOpen();
-                return;
-            }
+            { ShowPasswordError("New password must be at least 6 characters long."); KeepModalOpen(); return; }
 
             if (newPassword != confirmPassword)
-            {
-                ShowPasswordError("New password and confirmation do not match.");
-                KeepModalOpen();
-                return;
-            }
+            { ShowPasswordError("New password and confirmation do not match."); KeepModalOpen(); return; }
 
             if (currentPassword == newPassword)
-            {
-                ShowPasswordError("New password must be different from current password.");
-                KeepModalOpen();
-                return;
-            }
+            { ShowPasswordError("New password must be different from current password."); KeepModalOpen(); return; }
 
             try
             {
-                string userId = Session["UserID"].ToString();
-                bool success = DatabaseHelper.ChangePassword(userId, currentPassword, newPassword);
+                bool success = DatabaseHelper.ChangePassword(
+                    Session["UserID"].ToString(), currentPassword, newPassword);
 
                 if (success)
                 {
                     ShowPasswordSuccess("Password changed successfully!");
                     txtCurrentPassword.Text = txtNewPassword.Text = txtConfirmPassword.Text = "";
-                    KeepModalOpen();
                 }
                 else
                 {
                     ShowPasswordError("Current password is incorrect.");
-                    KeepModalOpen();
                 }
+                KeepModalOpen();
             }
             catch (Exception ex)
             {
@@ -181,9 +161,8 @@ namespace prjLibrarySystem
                     return;
                 }
 
-                // Collaborative filtering: books borrowed by members who share
-                // reading history with this student, that this student hasn't read yet
-                string query = @"
+                int memberIdInt = Convert.ToInt32(memberId);
+                DataTable dt = DatabaseHelper.ExecuteQuery(@"
                     SELECT TOP 5
                         b.ISBN, b.Title, b.Author, b.Category,
                         b.AvailableCopies,
@@ -191,8 +170,7 @@ namespace prjLibrarySystem
                     FROM tblBooks b
                     INNER JOIN tblTransactions t ON b.ISBN = t.ISBN
                     WHERE t.MemberID IN (
-                        SELECT MemberID
-                        FROM tblTransactions
+                        SELECT MemberID FROM tblTransactions
                         WHERE ISBN IN (
                             SELECT ISBN FROM tblTransactions WHERE MemberID = @MemberID
                         )
@@ -203,10 +181,7 @@ namespace prjLibrarySystem
                     )
                     AND b.AvailableCopies > 0
                     GROUP BY b.ISBN, b.Title, b.Author, b.Category, b.AvailableCopies
-                    ORDER BY Popularity DESC";
-
-                int memberIdInt = Convert.ToInt32(memberId);
-                DataTable dt = DatabaseHelper.ExecuteQuery(query,
+                    ORDER BY Popularity DESC",
                     new SqlParameter[] { new SqlParameter("@MemberID", memberIdInt) });
 
                 if (dt.Rows.Count > 0)
@@ -234,25 +209,17 @@ namespace prjLibrarySystem
             try
             {
                 string memberEmail = Session["Email"]?.ToString();
+                if (string.IsNullOrEmpty(memberEmail)) { SetEmptyNotificationState(); return; }
 
-                if (string.IsNullOrEmpty(memberEmail))
-                {
-                    SetEmptyNotificationState();
-                    return;
-                }
-
-                string query = @"
+                DataTable dt = DatabaseHelper.ExecuteQuery(@"
                     SELECT TOP 10 Subject, Message, CreatedAt, Status, IsRead
                     FROM tblNotifications
                     WHERE Recipient = @Email
-                    ORDER BY CreatedAt DESC";
-
-                DataTable dt = DatabaseHelper.ExecuteQuery(query,
+                    ORDER BY CreatedAt DESC",
                     new SqlParameter[] { new SqlParameter("@Email", memberEmail) });
 
                 if (dt.Rows.Count > 0)
                 {
-                    // Badge = truly unread count only
                     int unreadCount = 0;
                     foreach (DataRow r in dt.Rows)
                         if (!Convert.ToBoolean(r["IsRead"])) unreadCount++;
@@ -261,28 +228,26 @@ namespace prjLibrarySystem
                     studentNotificationList.Visible = true;
                     noStudentNotifications.Visible = false;
 
-                    // Dropdown preview — latest 5
                     string dropdownHtml = "";
                     int dropdownCount = Math.Min(5, dt.Rows.Count);
                     for (int i = 0; i < dropdownCount; i++)
                     {
                         DataRow row = dt.Rows[i];
                         string date = Convert.ToDateTime(row["CreatedAt"]).ToString("MMM dd");
-                        string subject = System.Web.HttpUtility.HtmlEncode(row["Subject"].ToString());
-                        string message = System.Web.HttpUtility.HtmlEncode(row["Message"].ToString());
+                        string subj = System.Web.HttpUtility.HtmlEncode(row["Subject"].ToString());
+                        string msg = System.Web.HttpUtility.HtmlEncode(row["Message"].ToString());
                         bool isRead = Convert.ToBoolean(row["IsRead"]);
-                        string boldStyle = !isRead ? "font-weight:600;" : "";
+                        string bold = !isRead ? "font-weight:600;" : "";
 
                         dropdownHtml += $@"
-                            <li><a class='dropdown-item' style='{boldStyle}'>
+                            <li><a class='dropdown-item' style='{bold}'>
                                 <small class='text-muted'>{date}</small><br>
-                                <strong>{subject}</strong><br>
-                                <small>{message}</small>
+                                <strong>{subj}</strong><br>
+                                <small>{msg}</small>
                             </a></li>";
                     }
                     studentNotificationList.InnerHtml = dropdownHtml;
 
-                    // Full modal list
                     string modalHtml = "";
                     foreach (DataRow row in dt.Rows)
                     {

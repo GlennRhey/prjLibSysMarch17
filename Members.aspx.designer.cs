@@ -96,13 +96,13 @@ namespace prjLibrarySystem
         protected global::System.Web.UI.WebControls.Button btnStudentRole;
 
         /// <summary>
-        /// btnAdminRole control.
+        /// btnTeacherRole control.
         /// </summary>
         /// <remarks>
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.Button btnAdminRole;
+        protected global::System.Web.UI.WebControls.Button btnTeacherRole;
 
         /// <summary>
         /// lblRegisterTitle control.

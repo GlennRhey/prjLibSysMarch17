@@ -11,6 +11,18 @@ namespace prjLibrarySystem
     {
         protected void Page_Load(object sender, EventArgs e)
         {
+            if (Session["UserID"] == null) { Response.Redirect("Login.aspx"); return; }
+
+            string role = Session["Role"]?.ToString();
+            if (role != "Admin" && role != "Super Admin")
+            {
+                Response.Redirect("StudentDashboard.aspx");
+                return;
+            }
+
+            // Render correct sidebar — blue for Super Admin, red for Admin
+            litSidebar.Text = SidebarHelper.GetSidebar(role, "reports");
+
             if (!IsPostBack) LoadReportData();
         }
 
@@ -24,11 +36,10 @@ namespace prjLibrarySystem
                 lblTotalBooks.Text = GetCount("SELECT COUNT(*) FROM tblBooks");
                 lblTotalMembers.Text = GetCount(@"
                     SELECT COUNT(*) FROM tblMembers m
-                    INNER JOIN tblUsers u ON m.UserID = u.UserID
-                    WHERE u.IsActive = 1");
-                // FIX: Status='Active' not 'Borrowed'
-                lblIssuedBooks.Text = GetCount("SELECT COUNT(*) FROM tblTransactions WHERE Status = 'Active' AND RequestStatus = 'Accepted'");
-                lblOverdueBooks.Text = GetCount("SELECT COUNT(*) FROM tblTransactions WHERE Status = 'Active' AND DueDate < GETDATE()");
+                    INNER JOIN tblUsers u ON m.UserID=u.UserID
+                    WHERE u.IsActive=1");
+                lblIssuedBooks.Text = GetCount("SELECT COUNT(*) FROM tblTransactions WHERE Status='Active' AND RequestStatus='Accepted'");
+                lblOverdueBooks.Text = GetCount("SELECT COUNT(*) FROM tblTransactions WHERE Status='Active' AND DueDate<GETDATE()");
                 lblMostBorrowed.Text = GetMostBorrowedBook();
             }
             catch (Exception ex)
@@ -40,23 +51,19 @@ namespace prjLibrarySystem
             }
         }
 
-        private string GetCount(string query)
-        {
-            return DatabaseHelper.ExecuteQuery(query, new SqlParameter[0]).Rows[0][0].ToString();
-        }
+        private string GetCount(string query) =>
+            DatabaseHelper.ExecuteQuery(query, new SqlParameter[0]).Rows[0][0].ToString();
 
         private string GetMostBorrowedBook()
         {
             DataTable dt = DatabaseHelper.ExecuteQuery(@"
                 SELECT TOP 1 b.Title
                 FROM   tblBooks b
-                INNER JOIN tblTransactions t ON b.ISBN = t.ISBN
-                WHERE  t.RequestType   = 'Borrow'
-                  AND  t.RequestStatus = 'Accepted'
+                INNER JOIN tblTransactions t ON b.ISBN=t.ISBN
+                WHERE  t.RequestType='Borrow' AND t.RequestStatus='Accepted'
                 GROUP BY b.ISBN, b.Title
                 ORDER BY COUNT(t.BorrowID) DESC",
                 new SqlParameter[0]);
-
             return dt.Rows.Count > 0 ? dt.Rows[0][0].ToString() : "N/A";
         }
 
@@ -70,9 +77,9 @@ namespace prjLibrarySystem
                 csv.AppendLine();
                 csv.AppendLine("Metric,Value");
                 csv.AppendLine("Total Books," + GetCount("SELECT COUNT(*) FROM tblBooks"));
-                csv.AppendLine("Total Active Members," + GetCount(@"SELECT COUNT(*) FROM tblMembers m INNER JOIN tblUsers u ON m.UserID = u.UserID WHERE u.IsActive = 1"));
-                csv.AppendLine("Books Currently Active," + GetCount("SELECT COUNT(*) FROM tblTransactions WHERE Status = 'Active' AND RequestStatus = 'Accepted'"));
-                csv.AppendLine("Books Overdue," + GetCount("SELECT COUNT(*) FROM tblTransactions WHERE Status = 'Active' AND DueDate < GETDATE()"));
+                csv.AppendLine("Total Active Members," + GetCount(@"SELECT COUNT(*) FROM tblMembers m INNER JOIN tblUsers u ON m.UserID=u.UserID WHERE u.IsActive=1"));
+                csv.AppendLine("Books Currently Active," + GetCount("SELECT COUNT(*) FROM tblTransactions WHERE Status='Active' AND RequestStatus='Accepted'"));
+                csv.AppendLine("Books Overdue," + GetCount("SELECT COUNT(*) FROM tblTransactions WHERE Status='Active' AND DueDate<GETDATE()"));
                 csv.AppendLine("Most Borrowed Book,\"" + GetMostBorrowedBook() + "\"");
                 csv.AppendLine();
                 csv.AppendLine("Database,dbLibrarySystem");
@@ -91,7 +98,7 @@ namespace prjLibrarySystem
 
         private void ShowError(string message)
         {
-            ScriptManager.RegisterStartupScript(this, this.GetType(), "error",
+            ScriptManager.RegisterStartupScript(this, GetType(), "error",
                 "alert('" + message.Replace("'", "\\'") + "');", true);
         }
     }

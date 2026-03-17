@@ -13,7 +13,8 @@ namespace prjLibrarySystem.Models
             ConfigurationManager.ConnectionStrings["LibraryDB"]?.ConnectionString ??
             "Data Source=MSI\\SQLEXPRESS;Initial Catalog=dbLibrarySystem;Integrated Security=True";
 
-        // SHA256 password hashing — all password comparisons go through here
+        // ── Password hashing ──────────────────────────────────────────────────
+
         public static string HashPassword(string password)
         {
             using (SHA256 sha256 = SHA256.Create())
@@ -123,6 +124,60 @@ namespace prjLibrarySystem.Models
             catch { return false; }
         }
 
+        // ── Borrow limits (dynamic from tblSystemSettings) ────────────────────
+
+        public static (int maxBooks, int borrowDays) GetBorrowLimits(int memberId)
+        {
+            DataTable dt = ExecuteQuery(@"
+                SELECT s.SettingKey, s.SettingValue
+                FROM   tblSystemSettings s
+                INNER JOIN tblMembers m ON m.MemberType = s.MemberType
+                WHERE  m.MemberID = @MemberID",
+                new SqlParameter[] { new SqlParameter("@MemberID", memberId) });
+
+            int maxBooks = 3, borrowDays = 7; // safe fallback defaults
+            foreach (DataRow row in dt.Rows)
+            {
+                if (row["SettingKey"].ToString() == "MaxBorrowedBooks")
+                    maxBooks = Convert.ToInt32(row["SettingValue"]);
+                if (row["SettingKey"].ToString() == "BorrowDuration")
+                    borrowDays = Convert.ToInt32(row["SettingValue"]);
+            }
+            return (maxBooks, borrowDays);
+        }
+
+        // ── Audit logging ─────────────────────────────────────────────────────
+
+        public static void WriteAuditLog(
+            string userId,
+            string userName,
+            string action,
+            string affectedTable,
+            string affectedId = null,
+            string oldValue = null,
+            string newValue = null)
+        {
+            try
+            {
+                ExecuteNonQuery(@"
+                    INSERT INTO tblAuditLogs
+                        (UserID, UserName, Action, AffectedTable, AffectedID, OldValue, NewValue)
+                    VALUES
+                        (@UserID, @UserName, @Action, @AffectedTable, @AffectedID, @OldValue, @NewValue)",
+                    new SqlParameter[]
+                    {
+                        new SqlParameter("@UserID",        userId),
+                        new SqlParameter("@UserName",      (object)userName    ?? DBNull.Value),
+                        new SqlParameter("@Action",        action),
+                        new SqlParameter("@AffectedTable", affectedTable),
+                        new SqlParameter("@AffectedID",    (object)affectedId  ?? DBNull.Value),
+                        new SqlParameter("@OldValue",      (object)oldValue    ?? DBNull.Value),
+                        new SqlParameter("@NewValue",      (object)newValue    ?? DBNull.Value)
+                    });
+            }
+            catch { /* audit log failure must never break main functionality */ }
+        }
+
         // ── Notifications ─────────────────────────────────────────────────────
 
         public static void CreateNotification(string type, string recipient,
@@ -145,16 +200,15 @@ namespace prjLibrarySystem.Models
 
         public static void SendDueDateReminders()
         {
-            // Only send to active accepted loans due within 2 days that haven't been reminded yet
             DataTable dueBooks = ExecuteQuery(@"
                 SELECT t.BorrowID, u.Email, b.Title, t.DueDate, m.FullName
                 FROM   tblTransactions t
-                INNER JOIN tblMembers m ON t.MemberID  = m.MemberID
-                INNER JOIN tblUsers   u ON m.UserID    = u.UserID
-                INNER JOIN tblBooks   b ON t.ISBN      = b.ISBN
-                WHERE  t.Status               = 'Active'
-                  AND  t.RequestStatus        = 'Accepted'
-                  AND  t.DueDateReminderSent  = 0
+                INNER JOIN tblMembers m ON t.MemberID = m.MemberID
+                INNER JOIN tblUsers   u ON m.UserID   = u.UserID
+                INNER JOIN tblBooks   b ON t.ISBN     = b.ISBN
+                WHERE  t.Status              = 'Active'
+                  AND  t.RequestStatus       = 'Accepted'
+                  AND  t.DueDateReminderSent = 0
                   AND  t.DueDate BETWEEN GETDATE() AND DATEADD(DAY, 2, GETDATE())");
 
             foreach (DataRow row in dueBooks.Rows)
@@ -165,13 +219,12 @@ namespace prjLibrarySystem.Models
                 DateTime dueDate = Convert.ToDateTime(row["DueDate"]);
 
                 string message =
-                    $"Dear {fullName}, this is a reminder that '{title}' is due on " +
-                    $"{dueDate:MMMM dd, yyyy}. Please return it to avoid overdue charges. " +
-                    $"Thank you, Library Management System";
+                    $"Dear {fullName}, this is a friendly reminder that '{title}' is due on " +
+                    $"{dueDate:MMMM dd, yyyy}. Please return it to the library to avoid " +
+                    $"overdue charges. Thank you, Library Management System";
 
                 CreateNotification("EMAIL", email, "Book Due Date Reminder", message);
 
-                // Mark as reminded so it won't be sent again
                 ExecuteNonQuery(
                     "UPDATE tblTransactions SET DueDateReminderSent = 1 WHERE BorrowID = @BorrowID",
                     new SqlParameter[] { new SqlParameter("@BorrowID", row["BorrowID"]) });
