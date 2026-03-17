@@ -42,6 +42,24 @@ namespace prjLibrarySystem
         protected global::System.Web.UI.WebControls.HiddenField hfEditingMemberId;
 
         /// <summary>
+        /// litSidebar control.
+        /// </summary>
+        /// <remarks>
+        /// Auto-generated field.
+        /// To modify move field declaration from designer file to code-behind file.
+        /// </remarks>
+        protected global::System.Web.UI.WebControls.Literal litSidebar;
+
+        /// <summary>
+        /// btnAddNewMember control.
+        /// </summary>
+        /// <remarks>
+        /// Auto-generated field.
+        /// To modify move field declaration from designer file to code-behind file.
+        /// </remarks>
+        protected global::System.Web.UI.WebControls.Button btnAddNewMember;
+
+        /// <summary>
         /// txtSearchMember control.
         /// </summary>
         /// <remarks>
@@ -76,6 +94,15 @@ namespace prjLibrarySystem
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
         protected global::System.Web.UI.WebControls.DropDownList ddlStatus;
+
+        /// <summary>
+        /// lblStatusAlert control.
+        /// </summary>
+        /// <remarks>
+        /// Auto-generated field.
+        /// To modify move field declaration from designer file to code-behind file.
+        /// </remarks>
+        protected global::System.Web.UI.WebControls.Label lblStatusAlert;
 
         /// <summary>
         /// gvMembers control.
@@ -141,13 +168,13 @@ namespace prjLibrarySystem
         protected global::System.Web.UI.WebControls.TextBox txtEmail;
 
         /// <summary>
-        /// txtCourse control.
+        /// ddlCourse control.
         /// </summary>
         /// <remarks>
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.TextBox txtCourse;
+        protected global::System.Web.UI.WebControls.DropDownList ddlCourse;
 
         /// <summary>
         /// ddlYearLevel control.

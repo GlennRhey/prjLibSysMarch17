@@ -8,13 +8,11 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css?v=2.0" rel="stylesheet"/>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Member type selector inside the Add/Edit modal
         function selectMemberType(type) {
             var studentBtn = document.getElementById('<%= btnStudentRole.ClientID %>');
             var teacherBtn = document.getElementById('<%= btnTeacherRole.ClientID %>');
             studentBtn.classList.remove('active');
             teacherBtn.classList.remove('active');
-
             if (type === 'Student') {
                 studentBtn.classList.add('active');
                 document.getElementById('studentFields').style.display = 'block';
@@ -28,14 +26,10 @@
         }
     </script>
     <style>
-        .sidebar { min-height: 100vh; background: linear-gradient(135deg, #8b0000 0%, #b11226 100%); }
-        .sidebar .nav-link { color: white; padding: 15px 20px; border-radius: 0; }
-        .sidebar .nav-link:hover { background-color: rgba(255,255,255,0.1); color: white; }
-        .sidebar .nav-link.active { background: rgba(255,255,255,0.2); border-left: 4px solid white; }
         .main-content { padding: 20px; }
         .action-buttons .btn { margin-right: 5px; }
-        .status-active   { background-color: #28a745 !important; color: #fff !important; border: 1px solid #1e7e34; padding: 4px 8px; min-width: 70px; }
-        .status-inactive { background-color: #dc3545 !important; color: #fff !important; border: 1px solid #bd2130; padding: 4px 8px; min-width: 70px; }
+        .status-active   { background-color: #28a745 !important; color: #fff !important; border: 1px solid #1e7e34; padding: 4px 8px; min-width: 70px; border-radius: 4px; cursor: pointer; }
+        .status-inactive { background-color: #dc3545 !important; color: #fff !important; border: 1px solid #bd2130; padding: 4px 8px; min-width: 70px; border-radius: 4px; cursor: pointer; }
         .card-body { min-height: 580px; max-height: 580px; overflow-y: auto; position: relative; padding-bottom: 0; }
         tr.pagination { display: none !important; }
         .pagination-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 54px; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px; border-top: 1px solid #f0f0f0; background: #fff; border-radius: 0 0 4px 4px; }
@@ -53,43 +47,27 @@
 </head>
 <body>
 <form id="form1" runat="server">
-    <%-- Student is the only valid role here — no Admin option --%>
     <asp:HiddenField ID="hfSelectedRole"    runat="server" Value="Student" />
     <asp:HiddenField ID="hfEditingMemberId" runat="server" />
 
     <div class="container-fluid">
         <div class="row">
 
-            <%-- Sidebar --%>
-            <nav class="col-12 col-md-3 col-lg-2 d-block sidebar">
-                <div class="position-sticky pt-3">
-                    <h4 class="text-white text-center mb-4">Library System</h4>
-                    <ul class="nav flex-column">
-                        <li class="nav-item"><a class="nav-link" href="AdminDashboard.aspx"><i class="fas fa-tachometer-alt me-2"></i> Dashboard</a></li>
-                        <li class="nav-item"><a class="nav-link" href="Books.aspx"><i class="fas fa-book me-2"></i> Books</a></li>
-                        <li class="nav-item"><a class="nav-link active" href="Members.aspx"><i class="fas fa-users me-2"></i> Members</a></li>
-                        <li class="nav-item"><a class="nav-link" href="borrowtransac.aspx"><i class="fas fa-hand-holding me-2"></i> Borrow Transaction</a></li>
-                        <li class="nav-item"><a class="nav-link" href="reports.aspx"><i class="fas fa-chart-bar me-2"></i> Reports</a></li>
-                        <li class="nav-item"><a class="nav-link" href="Logout.aspx"><i class="fas fa-sign-out-alt me-2"></i> Logout</a></li>
-                    </ul>
-                </div>
-            </nav>
+            <%-- Dynamic sidebar — red for Admin, blue for Super Admin --%>
+            <asp:Literal ID="litSidebar" runat="server"></asp:Literal>
 
-            <%-- Main Content --%>
             <main class="col-12 col-md-9 col-lg-10 px-md-4 main-content">
                 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
                     <h1 class="h2">Member Management</h1>
                     <div class="btn-toolbar mb-2 mb-md-0">
                         <div class="btn-group me-2">
-                            <button type="button" class="btn btn-primary"
-                                data-bs-toggle="modal" data-bs-target="#memberModal">
-                                Add New Member
-                            </button>
+                            <asp:Button ID="btnAddNewMember" runat="server"
+                                Text="Add New Member" CssClass="btn btn-primary"
+                                OnClick="btnAddNewMember_Click" />
                         </div>
                     </div>
                 </div>
 
-                <%-- Filters — Student / Teacher only, no Admin option --%>
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <div class="input-group">
@@ -117,6 +95,11 @@
                     </div>
                 </div>
 
+                <%-- Status alert — shows inline instead of alert() popup --%>
+                <div class="mb-3">
+                    <asp:Label ID="lblStatusAlert" runat="server" CssClass="alert d-none"></asp:Label>
+                </div>
+
                 <div class="card shadow">
                     <div class="card-header py-3">
                         <h6 class="m-0 font-weight-bold text-primary">Members Directory (Students &amp; Teachers)</h6>
@@ -125,7 +108,7 @@
                         <asp:GridView ID="gvMembers" runat="server" CssClass="table table-hover"
                             AutoGenerateColumns="false" GridLines="None" AllowPaging="true"
                             PageSize="10" OnPageIndexChanging="gvMembers_PageIndexChanging"
-                            OnRowCommand="gvMembers_RowCommand" DataKeyNames="MemberID,Username,Role">
+                            OnRowCommand="gvMembers_RowCommand" DataKeyNames="Username,MemberID,Role">
                             <PagerStyle CssClass="pagination" />
                             <Columns>
                                 <asp:BoundField DataField="MemberID"         HeaderText="Member ID" />
@@ -170,14 +153,12 @@
         </div>
     </div>
 
-    <%-- Add / Edit Member Modal — Student & Teacher only --%>
+    <%-- Add / Edit Member Modal --%>
     <div class="modal fade" id="memberModal" tabindex="-1">
         <div class="modal-dialog modal-xl modal-dialog-centered" style="max-width:1000px;">
             <div class="modal-content">
                 <div class="modal-body p-0">
                     <div class="row g-0">
-
-                        <%-- Left panel: Student / Teacher selector --%>
                         <div class="col-md-5 role-selection">
                             <h3 class="mb-4">Library System</h3>
                             <p>Select Member Type</p>
@@ -188,13 +169,10 @@
                                 CssClass="btn role-btn w-75 mt-2"
                                 OnClientClick="selectMemberType('Teacher'); return false;" />
                         </div>
-
-                        <%-- Right panel: form fields --%>
                         <div class="col-md-7 p-4">
                             <h4 class="mb-4">
                                 <asp:Label ID="lblRegisterTitle" runat="server" Text="Add Student Member"></asp:Label>
                             </h4>
-
                             <div class="mb-3">
                                 <label>User ID</label>
                                 <asp:TextBox ID="txtUserId" runat="server" CssClass="form-control" />
@@ -207,12 +185,16 @@
                                 <label>Email</label>
                                 <asp:TextBox ID="txtEmail" runat="server" CssClass="form-control" TextMode="Email" />
                             </div>
-
-                            <%-- Student-only fields --%>
                             <div id="studentFields">
                                 <div class="mb-3">
                                     <label>Course</label>
-                                    <asp:TextBox ID="txtCourse" runat="server" CssClass="form-control" />
+                                    <asp:DropDownList ID="ddlCourse" runat="server" CssClass="form-control">
+                                        <asp:ListItem Value="">-- Select Course --</asp:ListItem>
+                                        <asp:ListItem Value="BSIT">BSIT</asp:ListItem>
+                                        <asp:ListItem Value="BSCS">BSCS</asp:ListItem>
+                                        <asp:ListItem Value="BSCpE">BSCpE</asp:ListItem>
+                                        <asp:ListItem Value="BSBA">BSBA</asp:ListItem>
+                                    </asp:DropDownList>
                                 </div>
                                 <div class="mb-3">
                                     <label>Year Level</label>
@@ -224,19 +206,16 @@
                                     </asp:DropDownList>
                                 </div>
                             </div>
-
                             <div class="mb-3">
                                 <label>Password</label>
                                 <asp:TextBox ID="txtPassword" runat="server" CssClass="form-control" TextMode="Password" />
                             </div>
-
                             <div class="d-flex gap-2">
                                 <asp:Button ID="btnSaveMember" runat="server" Text="Save Member"
                                     CssClass="btn btn-register w-50" OnClick="btnSaveMember_Click" />
                                 <button type="button" class="btn btn-secondary w-50" data-bs-dismiss="modal">Cancel</button>
                             </div>
                         </div>
-
                     </div>
                 </div>
             </div>
@@ -244,7 +223,6 @@
     </div>
 
 </form>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     window.addEventListener('DOMContentLoaded', function () {
         var builtInPager = document.querySelector('tr.pagination td');
